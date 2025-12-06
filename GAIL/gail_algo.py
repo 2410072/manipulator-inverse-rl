@@ -14,10 +14,7 @@ import torch.nn.functional as F
 
 # 日本語フォント設定
 import matplotlib
-matplotlib.rcParams['font.family'] = 'DejaVu Sans'
-matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Noto Sans CJK JP', 'IPAexGothic', 'Takao']
-matplotlib.rcParams['axes.unicode_minus'] = False
-
+import japanize_matplotlib
 
 class ExpertLoader:
     """エキスパートの状態・行動ペアをミニバッチで返すステートフルなイテレータ。"""
@@ -286,11 +283,18 @@ class GAILTrainer:
         score_history = []
         avg_score_history = []
 
+        # TD3 側と同様に、エピソード単位の成功フラグを集計する
+        success_history = []
+        avg_success_history = []
+
         for i in tqdm(range(n_episodes), desc='学習中..'):
             done = False
             truncated = False
             score = 0
             step = 0
+
+            # このエピソードで一度でも目標を達成したか (0 or 1)
+            ep_success = 0.0
 
             obs_array = []
             actions_array = []
@@ -307,7 +311,7 @@ class GAILTrainer:
                 action = self.select_action(state)
 
                 # 行動を実行
-                next_observation, env_reward, done, truncated, _ = env.step(np.array(action))
+                next_observation, env_reward, done, truncated, info = env.step(np.array(action))
                 next_obs, next_achieved_goal, next_desired_goal = next_observation.values()
                 next_state = np.concatenate((next_obs, next_achieved_goal, next_desired_goal))
                 # print(next_observation)
@@ -334,6 +338,10 @@ class GAILTrainer:
                     score += reward
                 step += 1
 
+                # info["is_success"] があれば成功フラグを更新
+                if isinstance(info, dict) and "is_success" in info:
+                    ep_success = max(ep_success, float(info["is_success"]))
+
             # HERでリプレイバッファを拡張
             self.her_augmentation(obs_array, actions_array, next_obs_array)
 
@@ -350,11 +358,18 @@ class GAILTrainer:
             avg_score = np.mean(score_history[-100:])
             avg_score_history.append(avg_score)
 
+            success_history.append(ep_success)
+            avg_success = np.mean(success_history[-100:])
+            avg_success_history.append(avg_success)
+
             if avg_score > self.best_score:
                 self.best_score = avg_score
 
             if i % print_every==0 and i!=0:
-                print(f"エピソード: {i} \t ステップ: {step} \t スコア: {score:.1f} \t 平均スコア: {avg_score:.1f}")
+                print(
+                    f"エピソード: {i} \t ステップ: {step} \t スコア: {score:.1f} \t 平均スコア: {avg_score:.1f} "
+                    f"\t 成功: {ep_success:.0f} \t 平均成功率: {avg_success:.2f}"
+                )
             
             # モデルを保存
             if self.model_save_path and i % (n_episodes//10)==0:
@@ -362,9 +377,9 @@ class GAILTrainer:
                 
         # 学習性能をプロット
         self.plot_scores(scores=score_history, avg_scores=avg_score_history,
-                plot_save_path=plot_save_path, plot_title=plot_title)
+            plot_save_path=plot_save_path, plot_title=plot_title)
 
-        return score_history, avg_score_history
+        return score_history, avg_score_history, success_history, avg_success_history
 
     def compute_gail_reward(self, state, action):
         with torch.no_grad():
@@ -477,6 +492,8 @@ class GAILTrainer:
     def test_model(self, steps, env=None, save_states=False, render_save_path=None, fps=30):
         """
         学習済みエージェントを環境で実行する。
+
+        環境の info['is_success'] を集計してエピソード成功フラグを返す。
         """
         if env is None:
             env = self.env
@@ -493,6 +510,7 @@ class GAILTrainer:
         images = []
         done = False
         truncated = False
+        ep_success = 0.0
         
         # 環境を指定ステップ実行し、報酬（必要なら状態）を収集
         with torch.inference_mode():
@@ -502,7 +520,7 @@ class GAILTrainer:
 
                 action = self.select_action(state)
 
-                observation, reward, done, truncated, _ = env.step(np.array(action))
+                observation, reward, done, truncated, info = env.step(np.array(action))
                 
                 current_observation, current_achieved_goal, current_desired_goal = observation.values()
                 state = np.concatenate((current_observation, current_achieved_goal, current_desired_goal))
@@ -511,6 +529,9 @@ class GAILTrainer:
                     state_list.append(torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device))
                 
                 episode_score += reward
+
+                if isinstance(info, dict) and "is_success" in info:
+                    ep_success = max(ep_success, float(info["is_success"]))
 
                 if done or truncated:
                     if render_save_path:
@@ -524,9 +545,9 @@ class GAILTrainer:
                 display.display(display.Image(data=f.read(), format='gif'))
                 
         if not save_states:
-            return episode_score
+            return episode_score, ep_success
         else:
-            return episode_score, state_list
+            return episode_score, ep_success, state_list
                 
                 
     def save_model(self):
@@ -560,10 +581,9 @@ class GAILTrainer:
         plt.figure(figsize=(10,8))
         plt.plot(scores)
         plt.plot(avg_scores)
-        title = plot_title if plot_title else f'{self.agent_name} のパフォーマンス'
-        plt.title(title)
-        plt.xlabel('エピソード')
-        plt.ylabel('スコア')
+        plt.title(f'Performance of {self.agent_name}')
+        plt.xlabel('Episode')
+        plt.ylabel('Score')
         if plot_save_path:
             plt.savefig(plot_save_path, bbox_inches='tight')
             plt.show()

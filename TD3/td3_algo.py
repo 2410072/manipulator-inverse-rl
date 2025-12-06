@@ -12,36 +12,33 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-# 日本語フォント設定
 import matplotlib
-matplotlib.rcParams['font.family'] = 'DejaVu Sans'
-matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Noto Sans CJK JP', 'IPAexGothic', 'Takao']
-matplotlib.rcParams['axes.unicode_minus'] = False
+import japanize_matplotlib
 
 import sys
 sys.path.append('../utils/')
 from networks import Actor, Critic
 from replay import ExperienceReplayMemory
 
-    
-# エージェント
+
+# Agent
 class TD3Trainer:
-    def __init__(self, env, input_dims, alpha=0.001, beta=0.002, gamma=0.99, tau=0.05, 
-                 batch_size=256, replay_size=10**6, update_actor_every=2, exploration_period=500, 
+    def __init__(self, env, input_dims, alpha=0.001, beta=0.002, gamma=0.99, tau=0.05,
+                 batch_size=256, replay_size=10**6, update_actor_every=2, exploration_period=500,
                  noise_factor=0.1, agent_name='agent', model_save_path=None, model_load_path=None):
-        
-        # ハイパーパラメータ
-        self.alpha = alpha  # アクターの学習率
-        self.beta = beta    # クリティックの学習率
-        self.gamma = gamma  # 割引率
-        self.tau = tau      # ソフトアップデート係数
-        self.batch_size = batch_size  # 学習バッチサイズ
+
+        # hyperparameters
+        self.alpha = alpha  # actor learning rate
+        self.beta = beta    # critic learning rate
+        self.gamma = gamma  # discount factor
+        self.tau = tau      # soft update factor
+        self.batch_size = batch_size  # training batch size
         self.time_step = 0
-        self.input_dims = input_dims   # 入力次元
-        self.exploration_period = exploration_period  # 探索期間
+        self.input_dims = input_dims   # input dimensions
+        self.exploration_period = exploration_period  # exploration period
         self.training_step_count = 0
         self.update_actor_every = update_actor_every
-        self.noise_factor = noise_factor   # 探索ノイズ係数
+        self.noise_factor = noise_factor   # exploration noise factor
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.best_score = 0
         self.agent_name = agent_name
@@ -51,13 +48,13 @@ class TD3Trainer:
         else:
             self.model_save_path = model_save_path
 
-        # 環境
+        # environment
         self.env = env
         self.n_actions = env.action_space.shape[0]
         self.max_action = env.action_space.high[0]
         self.min_action = env.action_space.low[0]
 
-        # リプレイバッファ
+        # replay buffer memory
         self.memory = ExperienceReplayMemory(replay_size, input_dims, self.n_actions)
 
         # initialize actor and critic networks
@@ -68,26 +65,25 @@ class TD3Trainer:
             self.initialize_networks(self.n_actions)
             self.update_target_parameters(tau=1)
 
-
     def initialize_networks(self, n_actions, checkpoints_dir=None):
         """
-        TD3エージェントのアクターとクリティックを初期化する。
+        Initialize actor and critic networks for TD3 agent.
         """
         if checkpoints_dir is None:
-            checkpoints_dir=self.model_save_path
-            
-        self.actor = Actor(state_shape=self.input_dims, num_actions=n_actions, 
+            checkpoints_dir = self.model_save_path
+
+        self.actor = Actor(state_shape=self.input_dims, num_actions=n_actions,
                            name="actor", checkpoints_dir=checkpoints_dir).to(self.device)
-        self.critic_1 = Critic(state_action_shape=self.input_dims+self.n_actions,
+        self.critic_1 = Critic(state_action_shape=self.input_dims + self.n_actions,
                                name="critic_1", checkpoints_dir=checkpoints_dir).to(self.device)
-        self.critic_2 = Critic(state_action_shape=self.input_dims+self.n_actions,
+        self.critic_2 = Critic(state_action_shape=self.input_dims + self.n_actions,
                                name="critic_2", checkpoints_dir=checkpoints_dir).to(self.device)
 
-        self.target_actor = Actor(state_shape=self.input_dims, num_actions=n_actions, 
+        self.target_actor = Actor(state_shape=self.input_dims, num_actions=n_actions,
                                   name="target_actor", checkpoints_dir=checkpoints_dir).to(self.device)
-        self.target_critic_1 = Critic(state_action_shape=self.input_dims+self.n_actions, 
+        self.target_critic_1 = Critic(state_action_shape=self.input_dims + self.n_actions,
                                       name="target_critic_1", checkpoints_dir=checkpoints_dir).to(self.device)
-        self.target_critic_2 = Critic(state_action_shape=self.input_dims+self.n_actions, 
+        self.target_critic_2 = Critic(state_action_shape=self.input_dims + self.n_actions,
                                       name="target_critic_2", checkpoints_dir=checkpoints_dir).to(self.device)
 
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.alpha)
@@ -97,11 +93,10 @@ class TD3Trainer:
         self.target_actor_optimizer = optim.Adam(self.target_actor.parameters(), lr=self.alpha)
         self.target_critic_1_optimizer = optim.Adam(self.target_critic_1.parameters(), lr=self.beta)
         self.target_critic_2_optimizer = optim.Adam(self.target_critic_2.parameters(), lr=self.beta)
-    
-    
+
     def soft_update(self, target_network, source_network, tau):
         """
-        ソフトアップデート則に従いターゲットネットワークの重みを更新する:
+        Update the weights of a target neural network using a soft update rule according to the formula:
             new_weight = tau * old_weight + (1 - tau) * old_target_weight
             θ′ ← τ θ + (1 −τ )θ′
         """
@@ -112,11 +107,10 @@ class TD3Trainer:
             target_params[key] = tau * source_params[key] + (1.0 - tau) * target_params[key]
 
         target_network.load_state_dict(target_params)
-        
-        
+
     def update_target_parameters(self, tau=None):
         """
-        ターゲットアクターと2つのターゲットクリティックをソフトアップデートで更新する。
+        Update the weights of the target actor and both target critic networks using soft update rule.
         """
         if tau is None:
             tau = self.tau
@@ -129,49 +123,47 @@ class TD3Trainer:
 
         # update weights of the second target critic network
         self.soft_update(self.target_critic_2, self.critic_2, tau)
-        
-        
+
     def select_action(self, observation):
         """
-        エージェントの行動を選択する。
-        
+        Select an action for the agent.
         """
-        # exploration_periodの間はランダム行動で探索を促す
-        if self.time_step < self.exploration_period and self.is_trained==False:
+        # Selects random action to promote exploration for the exploration_period period
+        if self.time_step < self.exploration_period and self.is_trained is False:
             mu = np.random.normal(scale=self.noise_factor, size=(self.n_actions,))
         else:
             state = torch.tensor([observation], dtype=torch.float32).to(self.device)
             mu = self.actor(state).detach().cpu().numpy()[0]
-            
+
         mu_star = mu + np.random.normal(scale=self.noise_factor, size=self.n_actions)   # add noise
         mu_star = np.clip(mu_star, self.min_action, self.max_action)   # clip action
         self.time_step += 1
 
         return mu_star
-    
-    
+
     def optimize_model(self):
         """
-        TD3アルゴリズムによる学習処理。
+        Function for agent learning that implements the TD3 algorithm.
 
-        ・過去の経験をリプレイバッファからランダムサンプリング
-        ・2つのクリティックに対して勾配降下
-        ・クリティック2回に1回の頻度でアクターを更新する遅延更新
+        Randomly sample a batch of past experiences from memory.
+        Perform gradient descent on the two critic networks.
+        Perform gradient descent on the actor network with a delayed update schedule;
+        the actor is updated once for every two updates of the critic networks.
         """
-        # バッファに十分な経験があるか確認
+        # check if there are enough experiences in memory
         if self.memory.size < self.batch_size:
             return
 
-        # バッファから経験をサンプリング
+        # sample a random batch of experiences from memory
         states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
-        
+
         states = torch.tensor(states, dtype=torch.float32).to(self.device)
         actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
 
-        # 2つのクリティックに対して勾配降下
+        # apply gradient descent on the two critic networks
         target_actions = self.target_actor(next_states) + torch.clamp(torch.randn_like(actions) * 0.2, -0.5, 0.5)
         target_actions = torch.clamp(target_actions, self.min_action, self.max_action)
 
@@ -182,12 +174,12 @@ class TD3Trainer:
 
         q1 = self.critic_1(states, actions).squeeze(1)
         q2 = self.critic_2(states, actions).squeeze(1)
-        
-        # クリティックの損失
+
+        # critic loss
         critic_1_loss = F.mse_loss(q1, target)
         critic_2_loss = F.mse_loss(q2, target)
 
-        # 勾配降下
+        # gradient descent
         self.critic_1_optimizer.zero_grad()
         critic_1_loss.backward()
         self.critic_1_optimizer.step()
@@ -196,7 +188,7 @@ class TD3Trainer:
         critic_2_loss.backward()
         self.critic_2_optimizer.step()
 
-        # クリティック2更新につき1回だけアクターを更新
+        # update the actor network only once for every two updates of critic networks
         self.training_step_count += 1
         if self.training_step_count % self.update_actor_every != 0:
             return
@@ -207,27 +199,41 @@ class TD3Trainer:
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        # アクターとクリティックのターゲットをソフトアップデート
+        # update actor/critic target networks weights with soft update rule
         self.update_target_parameters()
-        
-        
-    def td3_train(self, n_episodes=1500, opt_steps=64, reward_weights=None, 
+
+    def td3_train(self, n_episodes=1500, opt_steps=64, reward_weights=None,
                   print_every=100, render_save_path=None, plot_save_path=None):
-        
+        """
+        TD3 の学習ループ。
+        ここでエピソードごとの合計報酬 score に加えて、成功フラグ ep_success も集計する。
+        """
+
         if render_save_path:
-            env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 
-                              episode_trigger=lambda t: t % (n_episodes//10) == 0, disable_logger=True)
+            env = gym.wrappers.RecordVideo(
+                self.env,
+                video_folder=render_save_path,
+                episode_trigger=lambda t: t % (n_episodes // 10) == 0,
+                disable_logger=True
+            )
         else:
             env = self.env
-        
+
         score_history = []
         avg_score_history = []
 
-        for i in tqdm(range(n_episodes), desc='学習中..'):
+        # ★ 追加: 成功率を保存するリスト
+        success_history = []
+        avg_success_history = []
+
+        for i in tqdm(range(n_episodes), desc='Training..'):
             done = False
             truncated = False
             score = 0
             step = 0
+
+            # このエピソードが成功したかどうか (0 or 1)
+            ep_success = 0.0
 
             obs_array = []
             actions_array = []
@@ -238,25 +244,21 @@ class TD3Trainer:
             while not (done or truncated):
                 current_observation, achieved_goal, desired_goal = observation.values()
                 state = np.concatenate((current_observation, achieved_goal, desired_goal))
-                # print(state)
 
-                # 行動を選択
+                # select action
                 action = self.select_action(state)
 
-                # 行動を実行
-                next_observation, reward, done, truncated, _ = env.step(np.array(action))
+                # take action  ※ info を受け取るように修正
+                next_observation, reward, done, truncated, info = env.step(np.array(action))
                 next_obs, next_achieved_goal, next_desired_goal = next_observation.values()
                 next_state = np.concatenate((next_obs, next_achieved_goal, next_desired_goal))
-                # print(next_observation)
-                
+
                 if reward_weights is not None:
                     features = self.construct_feature_vector(observation).to(self.device)
                     reward_weights = reward_weights.to(self.device)
-                    reward = (reward_weights.t()) @ features                 # w^T ⋅ φ
-                    
-                    #print(reward_weights.t().shape, features.shape, reward.shape)
+                    reward = (reward_weights.t()) @ features  # w^T ⋅ φ
 
-                # 経験をリプレイバッファに保存
+                # store experience in replay buffer
                 self.memory.push(state, action, reward, next_state, done)
 
                 obs_array.append(observation)
@@ -270,79 +272,99 @@ class TD3Trainer:
                     score += reward
                 step += 1
 
-            # HERでリプレイバッファを拡張
+                # ★ 追加: info["is_success"] から成功フラグを更新
+                if isinstance(info, dict) and "is_success" in info:
+                    # PandaReach は、距離しきい値を満たすと is_success=1.0
+                    # エピソード中どこかで 1 が出れば成功とみなすので max を取る
+                    ep_success = max(ep_success, float(info["is_success"]))
+
+            # augment replay buffer with HER
             self.her_augmentation(obs_array, actions_array, next_obs_array)
 
-            # 複数ステップでエージェントを最適化
+            # train the agent in multiple optimization steps
             for _ in range(opt_steps):
                 self.optimize_model()
 
+            # 報酬履歴
             score_history.append(score)
             avg_score = np.mean(score_history[-100:])
             avg_score_history.append(avg_score)
 
+            # ★ 追加: 成功履歴
+            success_history.append(ep_success)
+            avg_success = np.mean(success_history[-100:])
+            avg_success_history.append(avg_success)
+
             if avg_score > self.best_score:
                 self.best_score = avg_score
 
-            if i % print_every==0 and i!=0:
-                print(f"エピソード: {i} \t ステップ: {step} \t スコア: {score:.1f} \t 平均スコア: {avg_score:.1f}")
-            
-            # モデルを保存
-            if self.model_save_path and i % (n_episodes//10)==0:
+            if i % print_every == 0 and i != 0:
+                print(
+                    f"Episode: {i} \t Steps: {step} "
+                    f"\t Score: {score:.1f} \t Average score: {avg_score:.1f} "
+                    f"\t Success: {ep_success:.0f} \t Avg success: {avg_success:.2f}"
+                )
+
+            # save model
+            if self.model_save_path and i % (n_episodes // 10) == 0:
                 self.save_model()
-                
-        # 学習性能をプロット
+
+        # Plot training performance（報酬のみプロット）
         self.plot_scores(scores=score_history, avg_scores=avg_score_history, plot_save_path=plot_save_path)
 
-        return score_history, avg_score_history
-    
-            
-    def her_augmentation(self, observations, actions, next_observations, k = 4):
-        """
-        Hindsight Experience Replay (HER) を用いてリプレイバッファを拡張する。
+        # ★ 返り値に成功率も含める
+        return score_history, avg_score_history, success_history, avg_success_history
 
-        観測・行動・次状態を走査し、各経験から複数の学習サンプルを生成する。
+    def her_augmentation(self, observations, actions, next_observations, k=4):
         """
-        # リプレイバッファを拡張
+        Augment the agent's replay buffer using Hindsight Experience Replay (HER).
+
+        This function iterates through the provided observations, actions, and next observations,
+        performing HER augmentation to create multiple training examples from each experience.
+        """
+        # augment the replay buffer
         num_samples = len(actions)
         for index in range(num_samples):
             for _ in range(k):
-                # エピソード後半から未来の観測とゴールをサンプリング
+                # sample a future state (observation and goal) from later in the episode
                 future_index = np.random.randint(index, num_samples)
                 future_observation, future_achieved_goal, _ = next_observations[future_index].values()
 
-                # 現在の観測と行動を取り出す
+                # extract current observation and action from the experience
                 observation, _, _ = observations[future_index].values()
-                
-                # 未来の達成ゴールを目的ゴールとして状態を構成
-                state = torch.tensor(np.concatenate((observation, future_achieved_goal, future_achieved_goal)), 
-                                     dtype=torch.float32).to(self.device)
+
+                # create state representation including the future achieved goal (as if it were the intended goal)
+                state = torch.tensor(
+                    np.concatenate((observation, future_achieved_goal, future_achieved_goal)),
+                    dtype=torch.float32
+                ).to(self.device)
 
                 next_observation, _, _ = next_observations[future_index].values()
-                
-                # 同じゴールで次状態を構成
-                next_state = torch.tensor(np.concatenate((next_observation, future_achieved_goal, 
-                                                          future_achieved_goal)), dtype=torch.float32).to(self.device)
 
-                # 行動を取り出す
+                # create next state representation with the same goal
+                next_state = torch.tensor(
+                    np.concatenate((next_observation, future_achieved_goal, future_achieved_goal)),
+                    dtype=torch.float32
+                ).to(self.device)
+
+                # extract action from the experience
                 action = torch.tensor(actions[future_index], dtype=torch.float32).to(self.device)
-                
-                # 未来ゴールを達成したと仮定した報酬を計算
+
+                # calculate reward based on achieving the future goal from the current state and action
                 reward = self.env.unwrapped.compute_reward(future_achieved_goal, future_achieved_goal, 1.0)
 
-                # 生成した経験をバッファへ保存
+                # store augmented experience in buffer
                 state = state.cpu().numpy()
                 action = action.cpu().numpy()
                 next_state = next_state.cpu().numpy()
 
                 self.memory.push(state, action, reward, next_state, True)
-                
-                
+
     def construct_feature_vector(self, observation):
         """
-        観測を正規化し、特徴ベクトルを組み立てる。
+        Normalize observation components and construct a feature vector for the given observation.
         """
-        # 観測要素を正規化
+        # normalize observation components
         obs = observation['observation']
         achieved_goal = observation['achieved_goal']
         desired_goal = observation['desired_goal']
@@ -350,37 +372,39 @@ class TD3Trainer:
         normalized_obs = (obs - self.env.observation_space['observation'].low) / \
                          (self.env.observation_space['observation'].high - self.env.observation_space['observation'].low)
         normalized_achieved_goal = (achieved_goal - self.env.observation_space['achieved_goal'].low) / \
-                                    (self.env.observation_space['achieved_goal'].high - self.env.observation_space['achieved_goal'].low)
+            (self.env.observation_space['achieved_goal'].high - self.env.observation_space['achieved_goal'].low)
         normalized_desired_goal = (desired_goal - self.env.observation_space['desired_goal'].low) / \
-                                   (self.env.observation_space['desired_goal'].high - self.env.observation_space['desired_goal'].low)
+            (self.env.observation_space['desired_goal'].high - self.env.observation_space['desired_goal'].low)
 
-        # 特徴ベクトルを構築
+        # construct feature vector
         feature_vector = np.concatenate((normalized_obs, normalized_achieved_goal, normalized_desired_goal))
 
         return torch.tensor(feature_vector, dtype=torch.float32)
-                
-                
+
     def test_model(self, steps, env=None, save_states=False, render_save_path=None, fps=30):
         """
-        学習済みエージェントを環境で実行する。
+        Run the trained agent in the environment.
+        ここでも 1 エピソードぶんの成功フラグ ep_success を計算する。
         """
         if env is None:
             env = self.env
         episode_score = 0
-        state_list = []     # 状態特徴ベクトルを蓄積するリスト
-        
+        state_list = []     # list to store state feature vectors
+
         observation, info = env.reset()
         current_observation, current_achieved_goal, current_desired_goal = observation.values()
         state = np.concatenate((current_observation, current_achieved_goal, current_desired_goal))
-                        
+
         if save_states:
             state_list.append(torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device))
-        
+
         images = []
         done = False
         truncated = False
-        
-        # 環境を指定ステップ実行し、報酬（必要なら状態）を収集
+
+        ep_success = 0.0  # ★ 追加: このエピソードが成功したかどうか
+
+        # run the environment for some steps and collect rewards (and optionally states)
         with torch.inference_mode():
             for i in range(steps):
                 if render_save_path:
@@ -388,15 +412,20 @@ class TD3Trainer:
 
                 action = self.select_action(state)
 
-                observation, reward, done, truncated, _ = env.step(np.array(action))
-                
+                # info を受け取るように修正
+                observation, reward, done, truncated, info = env.step(np.array(action))
+
                 current_observation, current_achieved_goal, current_desired_goal = observation.values()
                 state = np.concatenate((current_observation, current_achieved_goal, current_desired_goal))
 
                 if save_states:
                     state_list.append(torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device))
-                
+
                 episode_score += reward
+
+                # ★ 追加: info["is_success"] を確認
+                if isinstance(info, dict) and "is_success" in info:
+                    ep_success = max(ep_success, float(info["is_success"]))
 
                 if done or truncated:
                     if render_save_path:
@@ -404,20 +433,19 @@ class TD3Trainer:
                     break
 
         if render_save_path:
-            # env.close()
             imageio.mimsave(f'{render_save_path}.gif', images, fps=fps, loop=0)
             with open(f'{render_save_path}.gif', 'rb') as f:
                 display.display(display.Image(data=f.read(), format='gif'))
-                
+
         if not save_states:
-            return episode_score
+            # ★ 変更: episode_score と ep_success の両方を返す
+            return episode_score, ep_success
         else:
-            return episode_score, state_list
-                
-                
+            return episode_score, ep_success, state_list
+
     def save_model(self):
         """
-        学習済みモデルを保存する。
+        Save trained models.
         """
         torch.save(self.actor.state_dict(), self.actor.checkpoints_file)
         torch.save(self.critic_1.state_dict(), self.critic_1.checkpoints_file)
@@ -428,7 +456,7 @@ class TD3Trainer:
 
     def load_model(self):
         """
-        学習済みモデルを読み込む。
+        Load trained models.
         """
         self.is_trained = True
         self.actor.load_state_dict(torch.load(self.actor.checkpoints_file))
@@ -437,18 +465,18 @@ class TD3Trainer:
         self.target_actor.load_state_dict(torch.load(self.target_actor.checkpoints_file))
         self.target_critic_1.load_state_dict(torch.load(self.target_critic_1.checkpoints_file))
         self.target_critic_2.load_state_dict(torch.load(self.target_critic_2.checkpoints_file))
-        
-        
+
     def plot_scores(self, scores, avg_scores, plot_save_path):
         """
-        エージェントの性能をプロットする。
+        Plot performance of agent.
+        （ここは報酬のみ。成功率をプロットしたい場合は別メソッドを作ると良い）
         """
-        plt.figure(figsize=(10,8))
+        plt.figure(figsize=(10, 8))
         plt.plot(scores)
         plt.plot(avg_scores)
-        plt.title(f'{self.agent_name} のパフォーマンス')
-        plt.xlabel('エピソード')
-        plt.ylabel('スコア')
+        plt.title(f'Performance of {self.agent_name}')
+        plt.xlabel('Episode')
+        plt.ylabel('Score')
         if plot_save_path:
             plt.savefig(plot_save_path, bbox_inches='tight')
             plt.show()
