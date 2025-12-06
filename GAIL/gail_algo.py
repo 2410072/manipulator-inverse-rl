@@ -64,7 +64,8 @@ class ExpertLoader:
 
 def build_expert_loader(expert_path, batch_size=256, device=None, shuffle=True):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    trajectories = torch.load(expert_path)
+    # torch 2.6 以降は weights_only=True がデフォルトのため、ピクル化された dict などを読み込む場合は False を明示する。
+    trajectories = torch.load(expert_path, weights_only=False)
     return ExpertLoader(trajectories, batch_size=batch_size, device=device, shuffle=shuffle)
 
 import sys
@@ -274,7 +275,7 @@ class GAILTrainer:
         
         
     def gail_train(self, n_episodes=1500, opt_steps=64, reward_weights=None, 
-                  print_every=100, render_save_path=None, plot_save_path=None):
+                  print_every=100, render_save_path=None, plot_save_path=None, plot_title=None):
         
         if render_save_path:
             env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 
@@ -360,7 +361,8 @@ class GAILTrainer:
                 self.save_model()
                 
         # 学習性能をプロット
-        self.plot_scores(scores=score_history, avg_scores=avg_score_history, plot_save_path=plot_save_path)
+        self.plot_scores(scores=score_history, avg_scores=avg_score_history,
+                plot_save_path=plot_save_path, plot_title=plot_title)
 
         return score_history, avg_score_history
 
@@ -384,9 +386,18 @@ class GAILTrainer:
         expert_states = expert_states.to(self.device)
         expert_actions = expert_actions.to(self.device)
 
+        # エキスパート側のミニバッチが policy 側 batch_size より小さい場合があるので、
+        # 両者のバッチサイズを合わせる（最小サイズにそろえる）。
+        current_batch = expert_states.shape[0]
+        effective_batch = min(batch_size, current_batch)
+
+        # エキスパートバッチを effective_batch に切り詰め
+        expert_states = expert_states[:effective_batch]
+        expert_actions = expert_actions[:effective_batch]
+
         if self.memory.size < batch_size:
             return
-        states, actions, _, _, _ = self.memory.sample(batch_size)
+        states, actions, _, _, _ = self.memory.sample(effective_batch)
         states = torch.tensor(states, dtype=torch.float32, device=self.device)
         actions = torch.tensor(actions, dtype=torch.float32, device=self.device)
 
@@ -542,14 +553,15 @@ class GAILTrainer:
         self.target_critic_2.load_state_dict(torch.load(self.target_critic_2.checkpoints_file))
         
         
-    def plot_scores(self, scores, avg_scores, plot_save_path):
+    def plot_scores(self, scores, avg_scores, plot_save_path, plot_title=None):
         """
         エージェントの性能をプロットする。
         """
         plt.figure(figsize=(10,8))
         plt.plot(scores)
         plt.plot(avg_scores)
-        plt.title(f'{self.agent_name} のパフォーマンス')
+        title = plot_title if plot_title else f'{self.agent_name} のパフォーマンス'
+        plt.title(title)
         plt.xlabel('エピソード')
         plt.ylabel('スコア')
         if plot_save_path:

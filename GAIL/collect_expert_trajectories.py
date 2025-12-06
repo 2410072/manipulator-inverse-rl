@@ -1,14 +1,27 @@
+import os
+import sys
+from pathlib import Path
+
 import torch
 import numpy as np
 import gymnasium as gym
 import panda_gym
-from TD3.td3_algo import TD3Trainer
+
+# TD3 モジュールへのパスを追加して相対インポートの問題を解消
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TD3_DIR = PROJECT_ROOT / "TD3"
+if str(TD3_DIR) not in sys.path:
+    sys.path.append(str(TD3_DIR))
+
+from td3_algo import TD3Trainer
 
 
 def collect_expert_trajectories(env_name="PandaReach-v3", episodes=100, steps_per_episode=300,
                                 expert_model_path="../TD3/Models/Expert/", save_path="./expert_trajectories.pt",
                                 render=False):
-    env = gym.make(env_name, render_mode="rgb_array" if render else None)
+    # panda_gym は render_mode を "rgb_array" か "human" のみ許容するため、None を渡すと ValueError になる。
+    # GIF 生成やヘッドレス実行を想定し、常に "rgb_array" を指定する。
+    env = gym.make(env_name, render_mode="rgb_array")
     obs_shape = env.observation_space['observation'].shape[0] + \
                 env.observation_space['achieved_goal'].shape[0] + \
                 env.observation_space['desired_goal'].shape[0]
