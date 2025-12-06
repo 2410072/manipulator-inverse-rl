@@ -1,49 +1,49 @@
-# Learning Continuous Control using Inverse Reinforcement Learning
+# 逆強化学習で連続制御を学習する
 
-This project focuses on training a 7 DOF robotic arm agent from the PandaReach-v3 environment available in the panda-gym toolkit. The PandaReach-v3 task involves controlling a robotic arm to reach target objects in a simulated environment.We explore advanced algorithms for continuous control: Deep Deterministic Policy Gradient (DDPG) and Twin Delayed Deep Deterministic Policy Gradient (TD3) to train the agent for this task. Further, we use the projection-based inverse reinforcement learning algorithm based on the paper “Apprenticeship Learning via Inverse Reinforcement Learning" by P. Abbeel and A. Y. Ng to train apprentice agents for the same task by using the trained agents as the expert agents. The apprentice agents are trained succesfully in the continouous domain and attain performances close to the expert with one apprentice agent (trained using TD3 in the IRL step) surpassing even the expert's performance. This demonstrates the successful application of inverse reinforcement learning in continuous control tasks.
+panda-gym の PandaReach-v3 環境を用い、7自由度ロボットアームのエージェントを学習させるプロジェクトです。PandaReach-v3 ではシミュレーション内でロボットアームを制御し、目標位置に到達させます。連続制御の高度な手法である Deep Deterministic Policy Gradient (DDPG) と Twin Delayed Deep Deterministic Policy Gradient (TD3) を用いてエキスパートを作成し、さらに P. Abbeel と A. Y. Ng の論文 “Apprenticeship Learning via Inverse Reinforcement Learning" に基づく射影法IRLで弟子エージェントを学習させます。連続制御領域でも弟子エージェントはエキスパートに近い性能を達成し、TD3 を用いた弟子はエキスパートを上回ることも示されました。これは逆強化学習が連続制御タスクに有効であることを示しています。
 
 <p align="center">
   <img src="assets/Trained%20Agent.gif"/>
 </p>
 
-## Reinforcement Learning algorithms for Continuous Control
+## 連続制御の強化学習アルゴリズム
 
-Continuous reinforcement learning algorithms are designed to handle environments where actions are continuous, like controlling robotic arm joints with precision. These algorithms aim to discover policies that effectively map observed states to continuous actions, optimizing the accumulation of expected rewards. 
+連続値の行動空間（ロボット関節の角度制御など）に対応する強化学習アルゴリズムを用い、状態を連続行動へ写像する方策を学習して期待報酬を最大化します。 
 
 ### DDPG
 
-DDPG is an actor-critic algorithm designed for continuous action spaces. It combines the strengths of policy gradients and Q-learning. In DDPG, an actor network learns the policy, while a critic network approximates the action-value (Q-function). The actor network directly outputs continuous actions, which are evaluated by the critic network to output optimal actions.
+DDPG は連続行動空間向けのアクター・クリティック手法で、ポリシー勾配とQ学習の利点を組み合わせています。アクターネットワークが方策を、クリティックネットワークが行動価値（Q関数）を近似します。アクターは連続行動を直接出力し、それをクリティックが評価して最適行動へ導きます。
 
 ### TD3
 
-TD3 builds upon DDPG, addressing issues such as overestimation bias. It introduces twin critics to estimate the Q-value, employing two critic networks instead of one as in DDPG. Additionally, it utilizes target networks with delayed updates to stabilize training. TD3 is recognized for its robustness and enhanced performance compared to DDPG.
+TD3 は DDPG を拡張し、過大評価バイアスなどを抑えるために2つのクリティックを用いて Q 値を推定します。また、ターゲットネットワークを遅延更新することで学習を安定化させます。DDPG と比べて堅牢で高性能な手法として知られています。
 
 ## Hindsight Experience Replay (HER)
-Hindsight Experience Replay (HER) is a technique developed to tackle the challenge of sparse and binary rewards in reinforcement learning (RL) environments. In many robotic tasks, achieving the desired goal is rare, leading traditional RL algorithms to struggle with learning from such feedback. HER addresses this by repurposing past experiences for learning, regardless of whether they resulted in the desired goal. By relabeling failed attempts as succesful ones and storing both experiences in a replay buffer, the agent can learn from both successful and failed attempts, significantly improving the learning process.
+HER はスパースかつバイナリな報酬環境で学習を進めるためのテクニックです。多くのロボットタスクでは目標達成がまれで、従来のRLでは学習が進みにくいという課題があります。HERでは失敗エピソードを「別のゴールを達成した」として付け替え、成功・失敗の両方をリプレイバッファに保存することで学習信号を増やし、学習を大幅に改善します。
 
-## Inverse Reinforcement Learning
+## 逆強化学習
 
-Apprenticeship Learning via Inverse Reinforcement Learning combines principles of reinforcement learning and inverse reinforcement learning to enable agents to learn from expert demonstrations. The agent learns to perform a task by observing demonstrations provided by an expert, without explicit guidance or reward signals. Instead of learning directly from rewards, the algorithm seeks to infer the underlying reward function from the expert demonstrations and then optimize the agent's behavior based on this inferred reward function.
+Apprenticeship Learning via Inverse Reinforcement Learning は、エキスパートのデモから報酬関数を推定し、その報酬をもとにエージェントを最適化する手法です。明示的な報酬を与えず、専門家の軌跡から隠れた報酬関数を推論し、そこから得られる報酬で方策を改善します。
 
-One approach to implementing this is the Projection Method Algorithm, which iteratively refines the agent's policy based on the difference between the expert's behavior and the agent's behavior. At each iteration, the algorithm computes a weight vector that maximally separates the expert's feature expectations from the agent's feature expectations, subject to a constraint on the norm of the weight vector. This weight vector is then used to derive rewards and train the agent's policy using the above stated algorithms, and the process repeats until convergence. At least one of the trained apprentices performs at least as well as the expert within ϵ.
+本プロジェクトでは射影法アルゴリズムを用い、エキスパートとエージェントの特徴期待値の差を最大化する重みベクトルを反復的に求めます。この重みを報酬として RL アルゴリズムに渡し、収束するまで繰り返します。十分小さな ϵ 以内で少なくとも1つの弟子エージェントがエキスパートと同等以上の性能を示します。
 
-## Results:
+## 結果
 
 ### DDPG
 
-- The expert is trained for 500 episodes
-- Average reward of the expert over 1000 episodes = -1.768
+- エキスパートは500エピソードで学習
+- 1000エピソードでのエキスパート平均報酬 = -1.768
 
 <p align="center">
   <img src="Results/DDPG/Expert%20Performance.png" width="300" />
   <img src="Results/DDPG/Expert%20Policy.gif" width="350"/>
-  <p align="center">CartPole expert trained using Q learning</p>
+  <p align="center">Q学習で訓練したCartPoleエキスパート</p>
 </p>
 
-#### Apprentice agents
+#### 弟子エージェント
 
-- Ten apprentices were trained using the IRL algorithm.
-- The best performing apprentice agent has an average reward of -1.852 over 500 episodes.
+- IRL アルゴリズムで10体の弟子エージェントを学習。
+- 最良の弟子は500エピソードで平均報酬 -1.852 を達成。
 
 <p align="center">
   <img src="Results/DDPG/Apprentice_1%20Performance.png" width="250"/>
@@ -67,19 +67,19 @@ One approach to implementing this is the Projection Method Algorithm, which iter
 
 ### TD3
 
-- The expert is trained for 500 episodes
-- Average reward of the expert over 1000 episodes = -1.932
+- エキスパートは500エピソードで学習
+- 1000エピソードでのエキスパート平均報酬 = -1.932
 
 <p align="center">
   <img src="Results/TD3/Expert%20Performance.png" width="300" />
   <img src="Results/TD3/Expert%20Policy.gif" width="350"/>
-  <p align="center">CartPole expert trained using Q learning</p>
+  <p align="center">Q学習で訓練したCartPoleエキスパート</p>
 </p>
 
-#### Apprentice agents
+#### 弟子エージェント
 
-- Ten apprentices were trained using the IRL algorithm.
-- The best performing apprentice agent surpasses the expert and has an average reward of -1.852 over 500 episodes.
+- IRL アルゴリズムで10体の弟子エージェントを学習。
+- 最良の弟子はエキスパートを上回り、500エピソードで平均報酬 -1.852 を達成。
 
 <p align="center">
   <img src="Results/TD3/Apprentice_1%20Performance.png" width="250"/>
@@ -101,11 +101,11 @@ One approach to implementing this is the Projection Method Algorithm, which iter
   <img src="Results/TD3/Apprentice%2010%20Policy.gif" width="250"/>
 </p>
 
-## Documentation
+## ドキュメント
 
-For an overview of the project and its implementation, refer to the [presentation](docs/Learning%20Continuous%20Control%20using%20IRL.pdf) file.
+プロジェクトの概要と実装は [presentation](docs/Learning%20Continuous%20Control%20using%20IRL.pdf) を参照してください。
 
-## References:
+## 参考文献
 - Timothy P. Lillicrap, Jonathan J. Hunt, Alexander Pritzel, Nicolas Heess, Tom Erez, Yuval Tassa, David Silver, & Daan Wierstra. (2015). Continuous control with deep reinforcement learning.
 - Scott Fujimoto, Herke van Hoof, & David Meger (2018). Addressing Function Approximation Error in Actor-Critic Methods. CoRR, abs/1802.09477.
 - Quentin Gallouédec, Nicolas Cazin, Emmanuel Dellandréa, & Liming Chen. (2021). panda-gym: Open-source goal-conditioned environments for robotic learning.

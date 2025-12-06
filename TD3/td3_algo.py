@@ -12,30 +12,36 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+# 日本語フォント設定
+import matplotlib
+matplotlib.rcParams['font.family'] = 'DejaVu Sans'
+matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Noto Sans CJK JP', 'IPAexGothic', 'Takao']
+matplotlib.rcParams['axes.unicode_minus'] = False
+
 import sys
 sys.path.append('../utils/')
 from networks import Actor, Critic
 from replay import ExperienceReplayMemory
 
     
-# Agent
+# エージェント
 class TD3Trainer:
     def __init__(self, env, input_dims, alpha=0.001, beta=0.002, gamma=0.99, tau=0.05, 
                  batch_size=256, replay_size=10**6, update_actor_every=2, exploration_period=500, 
                  noise_factor=0.1, agent_name='agent', model_save_path=None, model_load_path=None):
         
-        # hyperparameters
-        self.alpha = alpha  # actor learning rate
-        self.beta = beta    # critic learning rate
-        self.gamma = gamma  # discount factor
-        self.tau = tau      # soft update factor
-        self.batch_size = batch_size  # training batch size
+        # ハイパーパラメータ
+        self.alpha = alpha  # アクターの学習率
+        self.beta = beta    # クリティックの学習率
+        self.gamma = gamma  # 割引率
+        self.tau = tau      # ソフトアップデート係数
+        self.batch_size = batch_size  # 学習バッチサイズ
         self.time_step = 0
-        self.input_dims = input_dims   # input dimensions
-        self.exploration_period = exploration_period  # exploration period
+        self.input_dims = input_dims   # 入力次元
+        self.exploration_period = exploration_period  # 探索期間
         self.training_step_count = 0
         self.update_actor_every = update_actor_every
-        self.noise_factor = noise_factor   # exploration noise factor
+        self.noise_factor = noise_factor   # 探索ノイズ係数
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.best_score = 0
         self.agent_name = agent_name
@@ -45,13 +51,13 @@ class TD3Trainer:
         else:
             self.model_save_path = model_save_path
 
-        # environment
+        # 環境
         self.env = env
         self.n_actions = env.action_space.shape[0]
         self.max_action = env.action_space.high[0]
         self.min_action = env.action_space.low[0]
 
-        # replay buffer memory
+        # リプレイバッファ
         self.memory = ExperienceReplayMemory(replay_size, input_dims, self.n_actions)
 
         # initialize actor and critic networks
@@ -65,7 +71,7 @@ class TD3Trainer:
 
     def initialize_networks(self, n_actions, checkpoints_dir=None):
         """
-        Initialize actor and critic networks for TD3 agent.
+        TD3エージェントのアクターとクリティックを初期化する。
         """
         if checkpoints_dir is None:
             checkpoints_dir=self.model_save_path
@@ -95,7 +101,7 @@ class TD3Trainer:
     
     def soft_update(self, target_network, source_network, tau):
         """
-        Update the weights of a target neural network using a soft update rule according to the formula:
+        ソフトアップデート則に従いターゲットネットワークの重みを更新する:
             new_weight = tau * old_weight + (1 - tau) * old_target_weight
             θ′ ← τ θ + (1 −τ )θ′
         """
@@ -110,7 +116,7 @@ class TD3Trainer:
         
     def update_target_parameters(self, tau=None):
         """
-        Update the weights of the target actor and both target critic networks using soft update rule.
+        ターゲットアクターと2つのターゲットクリティックをソフトアップデートで更新する。
         """
         if tau is None:
             tau = self.tau
@@ -127,10 +133,10 @@ class TD3Trainer:
         
     def select_action(self, observation):
         """
-        Select an action for the agent.
-         
+        エージェントの行動を選択する。
+        
         """
-        # Selects random action to promote exploration for the exploration_period period
+        # exploration_periodの間はランダム行動で探索を促す
         if self.time_step < self.exploration_period and self.is_trained==False:
             mu = np.random.normal(scale=self.noise_factor, size=(self.n_actions,))
         else:
@@ -146,18 +152,17 @@ class TD3Trainer:
     
     def optimize_model(self):
         """
-        Function for agent learning that implements the TD3 algorithm.
+        TD3アルゴリズムによる学習処理。
 
-        Randomly sample a batch of past experiences from memory.
-        Perform gradient descent on the two critic networks.
-        Perform gradient descent on the actor network with a delayed update schedule; 
-        the actor is updated once for every two updates of the critic networks.
+        ・過去の経験をリプレイバッファからランダムサンプリング
+        ・2つのクリティックに対して勾配降下
+        ・クリティック2回に1回の頻度でアクターを更新する遅延更新
         """
-        # check if there are enough experiences in memory
+        # バッファに十分な経験があるか確認
         if self.memory.size < self.batch_size:
             return
 
-        # sample a random batch of experiences from memory
+        # バッファから経験をサンプリング
         states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
         
         states = torch.tensor(states, dtype=torch.float32).to(self.device)
@@ -166,7 +171,7 @@ class TD3Trainer:
         next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
 
-        # apply gradient descent on the two critic networks
+        # 2つのクリティックに対して勾配降下
         target_actions = self.target_actor(next_states) + torch.clamp(torch.randn_like(actions) * 0.2, -0.5, 0.5)
         target_actions = torch.clamp(target_actions, self.min_action, self.max_action)
 
@@ -178,11 +183,11 @@ class TD3Trainer:
         q1 = self.critic_1(states, actions).squeeze(1)
         q2 = self.critic_2(states, actions).squeeze(1)
         
-        # critic loss
+        # クリティックの損失
         critic_1_loss = F.mse_loss(q1, target)
         critic_2_loss = F.mse_loss(q2, target)
 
-        # gradient descent
+        # 勾配降下
         self.critic_1_optimizer.zero_grad()
         critic_1_loss.backward()
         self.critic_1_optimizer.step()
@@ -191,7 +196,7 @@ class TD3Trainer:
         critic_2_loss.backward()
         self.critic_2_optimizer.step()
 
-        # update the actor network only once for every two updates of critic networks
+        # クリティック2更新につき1回だけアクターを更新
         self.training_step_count += 1
         if self.training_step_count % self.update_actor_every != 0:
             return
@@ -202,7 +207,7 @@ class TD3Trainer:
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        # update actor/critic target networks weights with soft update rule
+        # アクターとクリティックのターゲットをソフトアップデート
         self.update_target_parameters()
         
         
@@ -218,7 +223,7 @@ class TD3Trainer:
         score_history = []
         avg_score_history = []
 
-        for i in tqdm(range(n_episodes), desc='Training..'):
+        for i in tqdm(range(n_episodes), desc='学習中..'):
             done = False
             truncated = False
             score = 0
@@ -235,10 +240,10 @@ class TD3Trainer:
                 state = np.concatenate((current_observation, achieved_goal, desired_goal))
                 # print(state)
 
-                # select action
+                # 行動を選択
                 action = self.select_action(state)
 
-                # take action
+                # 行動を実行
                 next_observation, reward, done, truncated, _ = env.step(np.array(action))
                 next_obs, next_achieved_goal, next_desired_goal = next_observation.values()
                 next_state = np.concatenate((next_obs, next_achieved_goal, next_desired_goal))
@@ -251,7 +256,7 @@ class TD3Trainer:
                     
                     #print(reward_weights.t().shape, features.shape, reward.shape)
 
-                # store experience in replay buffer
+                # 経験をリプレイバッファに保存
                 self.memory.push(state, action, reward, next_state, done)
 
                 obs_array.append(observation)
@@ -265,10 +270,10 @@ class TD3Trainer:
                     score += reward
                 step += 1
 
-            # augment replay buffer with HER
+            # HERでリプレイバッファを拡張
             self.her_augmentation(obs_array, actions_array, next_obs_array)
 
-            # train the agent in multiple optimization steps
+            # 複数ステップでエージェントを最適化
             for _ in range(opt_steps):
                 self.optimize_model()
 
@@ -280,13 +285,13 @@ class TD3Trainer:
                 self.best_score = avg_score
 
             if i % print_every==0 and i!=0:
-                print(f"Episode: {i} \t Steps: {step} \t Score: {score:.1f} \t Average score: {avg_score:.1f}")
+                print(f"エピソード: {i} \t ステップ: {step} \t スコア: {score:.1f} \t 平均スコア: {avg_score:.1f}")
             
-            # save model
+            # モデルを保存
             if self.model_save_path and i % (n_episodes//10)==0:
                 self.save_model()
                 
-        # Plot training performance
+        # 学習性能をプロット
         self.plot_scores(scores=score_history, avg_scores=avg_score_history, plot_save_path=plot_save_path)
 
         return score_history, avg_score_history
@@ -294,40 +299,38 @@ class TD3Trainer:
             
     def her_augmentation(self, observations, actions, next_observations, k = 4):
         """
-        Augment the agent's replay buffer using Hindsight Experience Replay (HER).
+        Hindsight Experience Replay (HER) を用いてリプレイバッファを拡張する。
 
-        This function iterates through the provided observations, actions, and next observations,
-        performing HER augmentation to create multiple training examples from each experience.
+        観測・行動・次状態を走査し、各経験から複数の学習サンプルを生成する。
         """
-        # augment the replay buffer
+        # リプレイバッファを拡張
         num_samples = len(actions)
         for index in range(num_samples):
             for _ in range(k):
-                # sample a future state (observation and goal) from later in the episode
+                # エピソード後半から未来の観測とゴールをサンプリング
                 future_index = np.random.randint(index, num_samples)
                 future_observation, future_achieved_goal, _ = next_observations[future_index].values()
-                # print(future_achieved_goal)
 
-                # extract current observation and action from the experience
+                # 現在の観測と行動を取り出す
                 observation, _, _ = observations[future_index].values()
                 
-                # create state representation including the future achieved goal (as if it were the intended goal)
+                # 未来の達成ゴールを目的ゴールとして状態を構成
                 state = torch.tensor(np.concatenate((observation, future_achieved_goal, future_achieved_goal)), 
                                      dtype=torch.float32).to(self.device)
 
                 next_observation, _, _ = next_observations[future_index].values()
                 
-                # create next state representation with the same goal
+                # 同じゴールで次状態を構成
                 next_state = torch.tensor(np.concatenate((next_observation, future_achieved_goal, 
                                                           future_achieved_goal)), dtype=torch.float32).to(self.device)
 
-                # extract action from the experience
+                # 行動を取り出す
                 action = torch.tensor(actions[future_index], dtype=torch.float32).to(self.device)
                 
-                # calculate reward based on achieving the future goal from the current state and action
+                # 未来ゴールを達成したと仮定した報酬を計算
                 reward = self.env.unwrapped.compute_reward(future_achieved_goal, future_achieved_goal, 1.0)
 
-                # store augmented experience in buffer
+                # 生成した経験をバッファへ保存
                 state = state.cpu().numpy()
                 action = action.cpu().numpy()
                 next_state = next_state.cpu().numpy()
@@ -337,9 +340,9 @@ class TD3Trainer:
                 
     def construct_feature_vector(self, observation):
         """
-        Normalize observation components and construct a feature vector for the given observation.
+        観測を正規化し、特徴ベクトルを組み立てる。
         """
-        # normalize observation components
+        # 観測要素を正規化
         obs = observation['observation']
         achieved_goal = observation['achieved_goal']
         desired_goal = observation['desired_goal']
@@ -351,7 +354,7 @@ class TD3Trainer:
         normalized_desired_goal = (desired_goal - self.env.observation_space['desired_goal'].low) / \
                                    (self.env.observation_space['desired_goal'].high - self.env.observation_space['desired_goal'].low)
 
-        # construct feature vector
+        # 特徴ベクトルを構築
         feature_vector = np.concatenate((normalized_obs, normalized_achieved_goal, normalized_desired_goal))
 
         return torch.tensor(feature_vector, dtype=torch.float32)
@@ -359,12 +362,12 @@ class TD3Trainer:
                 
     def test_model(self, steps, env=None, save_states=False, render_save_path=None, fps=30):
         """
-        Run the trained agent in the environment.
+        学習済みエージェントを環境で実行する。
         """
         if env is None:
             env = self.env
         episode_score = 0
-        state_list = []     # list to store state feature vectors
+        state_list = []     # 状態特徴ベクトルを蓄積するリスト
         
         observation, info = env.reset()
         current_observation, current_achieved_goal, current_desired_goal = observation.values()
@@ -377,7 +380,7 @@ class TD3Trainer:
         done = False
         truncated = False
         
-        # run the environment for some steps and collect rewards (and optionally states)
+        # 環境を指定ステップ実行し、報酬（必要なら状態）を収集
         with torch.inference_mode():
             for i in range(steps):
                 if render_save_path:
@@ -414,7 +417,7 @@ class TD3Trainer:
                 
     def save_model(self):
         """
-        Save trained models.
+        学習済みモデルを保存する。
         """
         torch.save(self.actor.state_dict(), self.actor.checkpoints_file)
         torch.save(self.critic_1.state_dict(), self.critic_1.checkpoints_file)
@@ -425,7 +428,7 @@ class TD3Trainer:
 
     def load_model(self):
         """
-        Load trained models.
+        学習済みモデルを読み込む。
         """
         self.is_trained = True
         self.actor.load_state_dict(torch.load(self.actor.checkpoints_file))
@@ -438,14 +441,14 @@ class TD3Trainer:
         
     def plot_scores(self, scores, avg_scores, plot_save_path):
         """
-        Plot performance of agent.
+        エージェントの性能をプロットする。
         """
         plt.figure(figsize=(10,8))
         plt.plot(scores)
         plt.plot(avg_scores)
-        plt.title(f'Performance of {self.agent_name}')
-        plt.xlabel('Episode')
-        plt.ylabel('Score')
+        plt.title(f'{self.agent_name} のパフォーマンス')
+        plt.xlabel('エピソード')
+        plt.ylabel('スコア')
         if plot_save_path:
             plt.savefig(plot_save_path, bbox_inches='tight')
             plt.show()

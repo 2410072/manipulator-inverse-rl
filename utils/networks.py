@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-# Actor and Critic Networks
+# アクターとクリティックのネットワーク
 class Actor(nn.Module):
     def __init__(self, state_shape, num_actions, name, checkpoints_dir="../Data/"):
         super(Actor, self).__init__()
@@ -43,3 +43,23 @@ class Critic(nn.Module):
         x = torch.relu(self.hidden3(x))
         q_value = self.q_value(x)
         return q_value
+
+
+# 敵対的模倣学習（GAIL/AIRL）用の識別器
+class Discriminator(nn.Module):
+    def __init__(self, state_action_shape, name="discriminator", checkpoints_dir="../Data/"):
+        super(Discriminator, self).__init__()
+        if not os.path.exists(checkpoints_dir):
+            os.makedirs(checkpoints_dir)
+        self.checkpoints_file = os.path.join(checkpoints_dir, name + ".pth")
+
+        self.hidden1 = nn.Linear(in_features=state_action_shape, out_features=256)
+        self.hidden2 = nn.Linear(in_features=256, out_features=128)
+        self.output = nn.Linear(in_features=128, out_features=1)
+
+    def forward(self, state, action):
+        x = torch.cat([state, action], dim=1)
+        x = torch.relu(self.hidden1(x))
+        x = torch.relu(self.hidden2(x))
+        prob = torch.sigmoid(self.output(x))
+        return prob

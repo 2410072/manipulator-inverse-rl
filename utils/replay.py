@@ -1,6 +1,6 @@
 import numpy as np
 
-# Replay Memory
+# リプレイメモリ
 class ExperienceReplayMemory:
     def __init__(self, capacity, state_shape, num_actions):
         self.capacity = capacity
