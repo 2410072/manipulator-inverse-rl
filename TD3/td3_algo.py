@@ -299,10 +299,18 @@ class TD3Trainer:
                 self.best_score = avg_score
 
             if i % print_every == 0 and i != 0:
+                # Calculate recent stats over the last print_every episodes
+                recent_scores = score_history[-print_every:]
+                recent_successes = success_history[-print_every:]
+                
+                recent_avg_score = np.mean(recent_scores) if recent_scores else 0
+                recent_success_count = np.sum(recent_successes)
+                recent_success_rate = (recent_success_count / len(recent_successes)) * 100 if recent_successes else 0.0
+
                 print(
-                    f"Episode: {i} \t Steps: {step} "
-                    f"\t Score: {score:.1f} \t Average score: {avg_score:.1f} "
-                    f"\t Success: {ep_success:.0f} \t Avg success: {avg_success:.2f}"
+                    f"Episode: {i} \t Steps: {step} \t Score: {score:.1f} "
+                    f"\t Recent Avg Score: {recent_avg_score:.1f} "
+                    f"\t Success: {int(recent_success_count)}/{len(recent_successes)} ({recent_success_rate:.1f}%)"
                 )
 
             # save model
