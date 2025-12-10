@@ -212,7 +212,7 @@ class GAILTrainer:
     
     def optimize_model(self):
         """
-        TD3アルゴリズムによる学習処理。
+        GAILアルゴリズムによる学習処理。
 
         ・過去の経験をリプレイバッファからランダムサンプリング
         ・2つのクリティックに対して勾配降下
@@ -283,7 +283,7 @@ class GAILTrainer:
         score_history = []
         avg_score_history = []
 
-        # TD3 側と同様に、エピソード単位の成功フラグを集計する
+        # GAIL 側と同様に、エピソード単位の成功フラグを集計する
         success_history = []
         avg_success_history = []
 
@@ -366,9 +366,14 @@ class GAILTrainer:
                 self.best_score = avg_score
 
             if i % print_every==0 and i!=0:
+                # Calculate recent stats over the last print_every episodes
+                recent_successes = success_history[-print_every:]
+                recent_success_count = np.sum(recent_successes)
+                recent_success_rate = (recent_success_count / len(recent_successes)) * 100 if recent_successes else 0.0
+                
                 print(
                     f"エピソード: {i} \t ステップ: {step} \t スコア: {score:.1f} \t 平均スコア: {avg_score:.1f} "
-                    f"\t 成功: {ep_success:.0f} \t 平均成功率: {avg_success:.2f}"
+                    f"\t 成功: {int(recent_success_count)}/{len(recent_successes)} ({recent_success_rate:.1f}%)"
                 )
             
             # モデルを保存
