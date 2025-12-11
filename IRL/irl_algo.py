@@ -47,6 +47,9 @@ class IRLTrainer:
             self.model_save_path = f'../Data/{agent_name}'
         else:
             self.model_save_path = model_save_path
+        if not os.path.exists(self.model_save_path):
+            os.makedirs(self.model_save_path, exist_ok=True)
+            print(f"Created model save directory: {self.model_save_path}")
 
         # environment
         self.env = env
@@ -58,11 +61,12 @@ class IRLTrainer:
         self.memory = ExperienceReplayMemory(replay_size, input_dims, self.n_actions)
 
         # initialize actor and critic networks
+        # ALWAYS initialize networks with the SAVE path
+        self.initialize_networks(self.n_actions, checkpoints_dir=self.model_save_path)
+        
+        # Then load if path provided
         if model_load_path:
-            self.initialize_networks(self.n_actions, checkpoints_dir=model_load_path)
-            self.load_model()
-        else:
-            self.initialize_networks(self.n_actions)
+            self.load_model(model_load_path)
             self.update_target_parameters(tau=1)
 
     def initialize_networks(self, n_actions, checkpoints_dir=None):
@@ -132,7 +136,7 @@ class IRLTrainer:
         if self.time_step < self.exploration_period and self.is_trained is False:
             mu = np.random.normal(scale=self.noise_factor, size=(self.n_actions,))
         else:
-            state = torch.tensor([observation], dtype=torch.float32).to(self.device)
+            state = torch.tensor(np.array([observation]), dtype=torch.float32).to(self.device)
             mu = self.actor(state).detach().cpu().numpy()[0]
 
         mu_star = mu + np.random.normal(scale=self.noise_factor, size=self.n_actions)   # add noise
@@ -462,17 +466,36 @@ class IRLTrainer:
         torch.save(self.target_critic_1.state_dict(), self.target_critic_1.checkpoints_file)
         torch.save(self.target_critic_2.state_dict(), self.target_critic_2.checkpoints_file)
 
-    def load_model(self):
+    def load_model(self, load_path=None):
         """
         Load trained models.
         """
+        import os
+        path = load_path if load_path is not None else self.model_load_path
+        if path is None: return
+
+        if not os.path.exists(path + '/actor.pth') and not os.path.exists(path + 'actor.pth'):
+             # Try appending slash if missing
+             if os.path.exists(path + '/actor.pth'):
+                 path = path + '/'
+             else:
+                 print(f"Warning: Model not found at {path}. Skipping load.")
+                 return
+        
+        # Ensure trailing slash for string concat if needed, though usually handled by user input
+        if not path.endswith('/'): path += '/'
+        
+        print(f"Loading models from {path}")
         self.is_trained = True
-        self.actor.load_state_dict(torch.load(self.actor.checkpoints_file))
-        self.critic_1.load_state_dict(torch.load(self.critic_1.checkpoints_file))
-        self.critic_2.load_state_dict(torch.load(self.critic_2.checkpoints_file))
-        self.target_actor.load_state_dict(torch.load(self.target_actor.checkpoints_file))
-        self.target_critic_1.load_state_dict(torch.load(self.target_critic_1.checkpoints_file))
-        self.target_critic_2.load_state_dict(torch.load(self.target_critic_2.checkpoints_file))
+        
+        # Use simple string concat to match original logic style, but with new path
+        self.actor.load_state_dict(torch.load(path + 'actor.pth'))
+        self.critic_1.load_state_dict(torch.load(path + 'critic_1.pth'))
+        self.critic_2.load_state_dict(torch.load(path + 'critic_2.pth'))
+        self.target_actor.load_state_dict(torch.load(path + 'target_actor.pth'))
+        self.target_critic_1.load_state_dict(torch.load(path + 'target_critic_1.pth'))
+        self.target_critic_2.load_state_dict(torch.load(path + 'target_critic_2.pth'))
+
 
     def plot_scores(self, scores, avg_scores, plot_save_path):
         """
@@ -486,6 +509,7 @@ class IRLTrainer:
         plt.xlabel('Episode')
         plt.ylabel('Score')
         if plot_save_path:
+            os.makedirs(os.path.dirname(plot_save_path), exist_ok=True)
             plt.savefig(plot_save_path, bbox_inches='tight')
             plt.show()
         else:
