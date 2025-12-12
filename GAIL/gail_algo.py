@@ -200,7 +200,7 @@ class GAILTrainer:
         if self.time_step < self.exploration_period and self.is_trained==False:
             mu = np.random.normal(scale=self.noise_factor, size=(self.n_actions,))
         else:
-            state = torch.tensor([observation], dtype=torch.float32).to(self.device)
+            state = torch.tensor(np.array([observation]), dtype=torch.float32).to(self.device)
             mu = self.actor(state).detach().cpu().numpy()[0]
             
         mu_star = mu + np.random.normal(scale=self.noise_factor, size=self.n_actions)   # add noise
