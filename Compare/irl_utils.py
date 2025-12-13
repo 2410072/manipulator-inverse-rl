@@ -14,12 +14,12 @@ def create_env():
     
     # Preventing "Only one local in-process GUI/GUI_SERVER connection allowed" error
     # If a previous environment wasn't closed properly, PyBullet might still be connected.
-    try:
-        import pybullet
-        if pybullet.isConnected():
-            pybullet.disconnect()
-    except ImportError:
-        pass
+    # try:
+    #     import pybullet
+    #     if pybullet.isConnected():
+    #         pybullet.disconnect()
+    # except ImportError:
+    #     pass
 
     env = gym.make(
         ENV_NAME,
