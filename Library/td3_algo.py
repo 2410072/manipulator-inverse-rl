@@ -1,11 +1,11 @@
 import numpy as np
 import gymnasium as gym
-from gymnasium.wrappers.record_video import RecordVideo
 import panda_gym
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import imageio
 from IPython import display
+from typing import cast
 
 import os
 import torch
@@ -13,112 +13,51 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-# 日本語フォント設定
-import matplotlib
-import japanize_matplotlib
-
-class ExpertLoader:
-    """エキスパートの状態・行動ペアをミニバッチで返すステートフルなイテレータ。"""
-
-    def __init__(self, trajectories, batch_size=256, device="cpu", shuffle=True):
-        self.device = device
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-
-        states = []
-        actions = []
-        for traj in trajectories:
-            states.append(traj["states"])
-            actions.append(traj["actions"])
-
-        self.states = torch.tensor(np.concatenate(states, axis=0), dtype=torch.float32, device=self.device)
-        self.actions = torch.tensor(np.concatenate(actions, axis=0), dtype=torch.float32, device=self.device)
-
-        self.num_samples = self.states.shape[0]
-        self.indices = np.arange(self.num_samples)
-        self._cursor = 0
-        if self.shuffle:
-            np.random.shuffle(self.indices)
-
-    def __iter__(self):
-        self.reset()
-        return self
-
-    def __next__(self):
-        if self._cursor >= self.num_samples:
-            raise StopIteration
-
-        end = min(self._cursor + self.batch_size, self.num_samples)
-        idx = self.indices[self._cursor:end]
-        self._cursor = end
-
-        return self.states[idx], self.actions[idx]
-
-    def reset(self):
-        self._cursor = 0
-        if self.shuffle:
-            np.random.shuffle(self.indices)
-
-
-def build_expert_loader(expert_path, batch_size=256, device=None, shuffle=True):
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    # torch 2.6 以降は weights_only=True がデフォルトのため、ピクル化された dict などを読み込む場合は False を明示する。
-    trajectories = torch.load(expert_path, weights_only=False)
-    return ExpertLoader(trajectories, batch_size=batch_size, device=device, shuffle=shuffle)
-
-from networks import Actor, Critic, Discriminator
+from networks import Actor, Critic
 from replay import ExperienceReplayMemory
 
     
-# エージェント
-class GAILTrainer:
+# Agent
+class TD3Trainer:
     def __init__(self, env, input_dims, alpha=0.001, beta=0.002, gamma=0.99, tau=0.05, 
                  batch_size=256, replay_size=10**6, update_actor_every=2, exploration_period=500, 
-                 noise_factor=0.1, agent_name='agent', model_save_path=None, model_load_path=None,
-                 disc_lr=3e-4, expert_loader=None, gail_reward_scale=1.0, disc_updates=1):
+                 noise_factor=0.1, agent_name='agent', model_save_path=None, model_load_path=None):
         
-        # ハイパーパラメータ
-        self.alpha = alpha  # アクターの学習率
-        self.beta = beta    # クリティックの学習率
-        self.gamma = gamma  # 割引率
-        self.tau = tau      # ソフトアップデート係数
-        self.batch_size = batch_size  # 学習バッチサイズ
+        # hyperparameters
+        self.alpha = alpha  # actor learning rate
+        self.beta = beta    # critic learning rate
+        self.gamma = gamma  # discount factor
+        self.tau = tau      # soft update factor
+        self.batch_size = batch_size  # training batch size
         self.time_step = 0
-        self.input_dims = input_dims   # 入力次元
-        self.exploration_period = exploration_period  # 探索期間
+        self.input_dims = input_dims   # input dimensions
+        self.exploration_period = exploration_period  # exploration period
         self.training_step_count = 0
         self.update_actor_every = update_actor_every
-        self.noise_factor = noise_factor   # 探索ノイズ係数
+        self.noise_factor = noise_factor   # exploration noise factor
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.best_score = 0
         self.agent_name = agent_name
         self.is_trained = False
-        self.disc_lr = disc_lr
-        if isinstance(expert_loader, str):
-            self.expert_loader = build_expert_loader(expert_loader, batch_size=batch_size, device=self.device)
-        else:
-            self.expert_loader = expert_loader  # should yield (states, actions)
-        self.gail_reward_scale = gail_reward_scale
-        self.disc_updates = disc_updates
         if model_save_path is None:
             self.model_save_path = f'../Data/{agent_name}'
         else:
             self.model_save_path = model_save_path
-
+            
         # Ensure the save directory exists
         if not os.path.exists(self.model_save_path):
             os.makedirs(self.model_save_path, exist_ok=True)
 
-        # 環境
+        # environment
         self.env = env
         self.n_actions = env.action_space.shape[0]
         self.max_action = env.action_space.high[0]
         self.min_action = env.action_space.low[0]
 
-        # リプレイバッファ
+        # replay buffer memory
         self.memory = ExperienceReplayMemory(replay_size, input_dims, self.n_actions)
 
-        # アクター・クリティック・識別器の初期化
+        # initialize actor and critic networks
         if model_load_path:
             self.initialize_networks(self.n_actions, checkpoints_dir=model_load_path)
             self.load_model()
@@ -129,7 +68,7 @@ class GAILTrainer:
 
     def initialize_networks(self, n_actions, checkpoints_dir=None):
         """
-        アクター、クリティック、識別器のネットワークを初期化する。
+        Initialize actor and critic networks for TD3 agent.
         """
         if checkpoints_dir is None:
             checkpoints_dir=self.model_save_path
@@ -156,17 +95,28 @@ class GAILTrainer:
         self.target_critic_1_optimizer = optim.Adam(self.target_critic_1.parameters(), lr=self.beta)
         self.target_critic_2_optimizer = optim.Adam(self.target_critic_2.parameters(), lr=self.beta)
 
-        # discriminator
-        self.discriminator = Discriminator(state_action_shape=self.input_dims + self.n_actions,
-                           name="discriminator", checkpoints_dir=checkpoints_dir).to(self.device)
-        self.discriminator_optimizer = optim.Adam(self.discriminator.parameters(), lr=self.disc_lr)
-    
 
+    def update_save_path(self, new_path):
+        """
+        Update the save path for all networks.
+        This method must be called when changing model_save_path after initialization.
+        """
+        self.model_save_path = new_path
+        if not os.path.exists(new_path):
+            os.makedirs(new_path, exist_ok=True)
+        
+        # Update checkpoint files for all networks
+        self.actor.checkpoints_file = os.path.join(new_path, "actor.pth")
+        self.critic_1.checkpoints_file = os.path.join(new_path, "critic_1.pth")
+        self.critic_2.checkpoints_file = os.path.join(new_path, "critic_2.pth")
+        self.target_actor.checkpoints_file = os.path.join(new_path, "target_actor.pth")
+        self.target_critic_1.checkpoints_file = os.path.join(new_path, "target_critic_1.pth")
+        self.target_critic_2.checkpoints_file = os.path.join(new_path, "target_critic_2.pth")
     
     
     def soft_update(self, target_network, source_network, tau):
         """
-        ソフトアップデート則に従いターゲットネットワークの重みを更新する:
+        Update the weights of a target neural network using a soft update rule according to the formula:
             new_weight = tau * old_weight + (1 - tau) * old_target_weight
             θ′ ← τ θ + (1 −τ )θ′
         """
@@ -181,7 +131,7 @@ class GAILTrainer:
         
     def update_target_parameters(self, tau=None):
         """
-        ターゲットアクターと2つのターゲットクリティックをソフトアップデートで更新する。
+        Update the weights of the target actor and both target critic networks using soft update rule.
         """
         if tau is None:
             tau = self.tau
@@ -198,10 +148,10 @@ class GAILTrainer:
         
     def select_action(self, observation):
         """
-        エージェントの行動を選択する。
-        
+        Select an action for the agent.
+         
         """
-        # exploration_periodの間はランダム行動で探索を促す
+        # Selects random action to promote exploration for the exploration_period period
         if self.time_step < self.exploration_period and self.is_trained==False:
             mu = np.random.normal(scale=self.noise_factor, size=(self.n_actions,))
         else:
@@ -217,17 +167,18 @@ class GAILTrainer:
     
     def optimize_model(self):
         """
-        GAILアルゴリズムによる学習処理。
+        Function for agent learning that implements the TD3 algorithm.
 
-        ・過去の経験をリプレイバッファからランダムサンプリング
-        ・2つのクリティックに対して勾配降下
-        ・クリティック2回に1回の頻度でアクターを更新する遅延更新
+        Randomly sample a batch of past experiences from memory.
+        Perform gradient descent on the two critic networks.
+        Perform gradient descent on the actor network with a delayed update schedule; 
+        the actor is updated once for every two updates of the critic networks.
         """
-        # バッファに十分な経験があるか確認
+        # check if there are enough experiences in memory
         if self.memory.size < self.batch_size:
             return
 
-        # バッファから経験をサンプリング
+        # sample a random batch of experiences from memory
         states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
         
         states = torch.tensor(states, dtype=torch.float32).to(self.device)
@@ -236,7 +187,7 @@ class GAILTrainer:
         next_states = torch.tensor(next_states, dtype=torch.float32).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
 
-        # 2つのクリティックに対して勾配降下
+        # apply gradient descent on the two critic networks
         target_actions = self.target_actor(next_states) + torch.clamp(torch.randn_like(actions) * 0.2, -0.5, 0.5)
         target_actions = torch.clamp(target_actions, self.min_action, self.max_action)
 
@@ -248,11 +199,11 @@ class GAILTrainer:
         q1 = self.critic_1(states, actions).squeeze(1)
         q2 = self.critic_2(states, actions).squeeze(1)
         
-        # クリティックの損失
+        # critic loss
         critic_1_loss = F.mse_loss(q1, target)
         critic_2_loss = F.mse_loss(q2, target)
 
-        # 勾配降下
+        # gradient descent
         self.critic_1_optimizer.zero_grad()
         critic_1_loss.backward()
         self.critic_1_optimizer.step()
@@ -261,7 +212,7 @@ class GAILTrainer:
         critic_2_loss.backward()
         self.critic_2_optimizer.step()
 
-        # クリティック2更新につき1回だけアクターを更新
+        # update the actor network only once for every two updates of critic networks
         self.training_step_count += 1
         if self.training_step_count % self.update_actor_every != 0:
             return
@@ -272,34 +223,30 @@ class GAILTrainer:
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        # アクターとクリティックのターゲットをソフトアップデート
+        # update actor/critic target networks weights with soft update rule
         self.update_target_parameters()
         
         
-    def gail_train(self, n_episodes=1500, opt_steps=64, reward_weights=None, 
-                  print_every=100, render_save_path=None, plot_save_path=None, plot_title=None):
+    def td3_train(self, n_episodes=1500, opt_steps=64, reward_weights=None, 
+                  print_every=100, render_save_path=None, plot_save_path=None):
         
         if render_save_path:
-            env = RecordVideo(self.env, video_folder=render_save_path, 
-                              episode_trigger=lambda t: t % (n_episodes//10) == 0, disable_logger=True)
+            env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 
+                              episode_trigger=lambda t: t % max(1, n_episodes//10) == 0, disable_logger=True)
         else:
             env = self.env
         
         score_history = []
         avg_score_history = []
-
-        # GAIL 側と同様に、エピソード単位の成功フラグを集計する
         success_history = []
         avg_success_history = []
 
-        for i in tqdm(range(n_episodes), desc='学習中..'):
+        for i in tqdm(range(n_episodes), desc='Training..'):
             done = False
             truncated = False
             score = 0.0
             step = 0
-
-            # このエピソードで一度でも目標を達成したか (0 or 1)
-            ep_success = 0.0
+            ep_success = 0
 
             obs_array = []
             actions_array = []
@@ -314,11 +261,11 @@ class GAILTrainer:
                 state = np.concatenate((current_observation, achieved_goal, desired_goal))
                 # print(state)
 
-                # 行動を選択
+                # select action
                 action = self.select_action(state)
 
-                # 行動を実行
-                next_observation, env_reward, done, truncated, info = env.step(np.array(action))
+                # take action
+                next_observation, reward, done, truncated, info = env.step(np.array(action))
                 next_obs = next_observation['observation']
                 next_achieved_goal = next_observation['achieved_goal']
                 next_desired_goal = next_observation['desired_goal']
@@ -329,11 +276,10 @@ class GAILTrainer:
                     features = self.construct_feature_vector(observation).to(self.device)
                     reward_weights = reward_weights.to(self.device)
                     reward = (reward_weights.t()) @ features                 # w^T ⋅ φ
-                else:
-                    # GAILの報酬: log(D)
-                    reward = self.compute_gail_reward(state, action)
+                    
+                    #print(reward_weights.t().shape, features.shape, reward.shape)
 
-                # 経験をリプレイバッファに保存
+                # store experience in replay buffer
                 self.memory.push(state, action, reward, next_state, done)
 
                 obs_array.append(observation)
@@ -341,140 +287,99 @@ class GAILTrainer:
                 next_obs_array.append(next_observation)
 
                 observation = next_observation
-                if isinstance(reward, torch.Tensor):
-                    score += reward.item()
+                if reward_weights is not None:
+                    # Explicit cast to silence Pyright warning: "Cannot access attribute 'cpu' for class 'SupportsFloat'"
+                    # This ensures static analysis knows 'reward' is a Tensor here, without changing runtime behavior.
+                    score += cast(torch.Tensor, reward).cpu().numpy()[0]
                 else:
-                    score += reward
-                step += 1
-
-                # info["is_success"] があれば成功フラグを更新
+                    score += float(reward)
+                
+                # Update success
                 if isinstance(info, dict) and "is_success" in info:
                     ep_success = max(ep_success, float(info["is_success"]))
+                
+                step += 1
 
-            # HERでリプレイバッファを拡張
+            # augment replay buffer with HER
             self.her_augmentation(obs_array, actions_array, next_obs_array)
 
-            # 識別器を更新（エキスパートとポリシーの両バッファからサンプル）
-            if self.expert_loader is not None:
-                for _ in range(self.disc_updates):
-                    self.update_discriminator()
-
-            # 複数ステップでエージェントを最適化
+            # train the agent in multiple optimization steps
             for _ in range(opt_steps):
                 self.optimize_model()
 
             score_history.append(score)
             avg_score = np.mean(score_history[-100:])
             avg_score_history.append(avg_score)
-
+            
             success_history.append(ep_success)
             avg_success = np.mean(success_history[-100:])
             avg_success_history.append(avg_success)
 
             if avg_score > self.best_score:
                 self.best_score = avg_score
-
-            if i % print_every==0 and i!=0:
+            
+            if i % print_every == 0 and i != 0:
                 # Calculate recent stats over the last print_every episodes
+                recent_scores = score_history[-print_every:]
                 recent_successes = success_history[-print_every:]
+                
+                recent_avg_score = np.mean(recent_scores) if recent_scores else 0
                 recent_success_count = np.sum(recent_successes)
                 recent_success_rate = (recent_success_count / len(recent_successes)) * 100 if recent_successes else 0.0
-                
+
                 print(
-                    f"Episode: {i} \t Steps: {step} \t Score: {score:.1f} \t Avg Score: {avg_score:.1f} "
+                    f"Episode: {i} \t Steps: {step} \t Score: {score:.1f} "
+                    f"\t Recent Avg Score: {recent_avg_score:.1f} "
                     f"\t Success: {int(recent_success_count)}/{len(recent_successes)} ({recent_success_rate:.1f}%)"
                 )
             
-            # モデルを保存
-            if self.model_save_path and i % (n_episodes//10)==0:
+            # save model
+            if self.model_save_path and i % max(1, n_episodes//10) == 0:
                 self.save_model()
                 
-        # 学習性能をプロット
-        self.plot_scores(scores=score_history, avg_scores=avg_score_history,
-            plot_save_path=plot_save_path, plot_title=plot_title)
+        # Plot training performance
+        self.plot_scores(scores=score_history, avg_scores=avg_score_history, plot_save_path=plot_save_path)
 
         return score_history, avg_score_history, success_history, avg_success_history
-
-    def compute_gail_reward(self, state, action):
-        with torch.no_grad():
-            state_t = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-            action_t = torch.tensor(action, dtype=torch.float32, device=self.device).unsqueeze(0)
-            prob = self.discriminator(state_t, action_t)
-            reward = torch.log(prob + 1e-8) * self.gail_reward_scale
-        return reward.item()
-
-    def update_discriminator(self, batch_size=256):
-        if self.expert_loader is None:
-            return
-        try:
-            expert_states, expert_actions = next(self.expert_loader)
-        except StopIteration:
-            self.expert_loader.reset()
-            expert_states, expert_actions = next(self.expert_loader)
-
-        expert_states = expert_states.to(self.device)
-        expert_actions = expert_actions.to(self.device)
-
-        # エキスパート側のミニバッチが policy 側 batch_size より小さい場合があるので、
-        # 両者のバッチサイズを合わせる（最小サイズにそろえる）。
-        current_batch = expert_states.shape[0]
-        effective_batch = min(batch_size, current_batch)
-
-        # エキスパートバッチを effective_batch に切り詰め
-        expert_states = expert_states[:effective_batch]
-        expert_actions = expert_actions[:effective_batch]
-
-        if self.memory.size < batch_size:
-            return
-        states, actions, _, _, _ = self.memory.sample(effective_batch)
-        states = torch.tensor(states, dtype=torch.float32, device=self.device)
-        actions = torch.tensor(actions, dtype=torch.float32, device=self.device)
-
-        self.discriminator_optimizer.zero_grad()
-
-        expert_logits = self.discriminator(expert_states, expert_actions)
-        policy_logits = self.discriminator(states, actions)
-
-        loss = -torch.mean(torch.log(expert_logits + 1e-8) + torch.log(1 - policy_logits + 1e-8))
-        loss.backward()
-        self.discriminator_optimizer.step()
     
             
     def her_augmentation(self, observations, actions, next_observations, k = 4):
         """
-        Hindsight Experience Replay (HER) を用いてリプレイバッファを拡張する。
+        Augment the agent's replay buffer using Hindsight Experience Replay (HER).
 
-        観測・行動・次状態を走査し、各経験から複数の学習サンプルを生成する。
+        This function iterates through the provided observations, actions, and next observations,
+        performing HER augmentation to create multiple training examples from each experience.
         """
-        # リプレイバッファを拡張
+        # augment the replay buffer
         num_samples = len(actions)
         for index in range(num_samples):
             for _ in range(k):
-                # エピソード後半から未来の観測とゴールをサンプリング
+                # sample a future state (observation and goal) from later in the episode
                 future_index = np.random.randint(index, num_samples)
                 future_observation = next_observations[future_index]['observation']
                 future_achieved_goal = next_observations[future_index]['achieved_goal']
+                # print(future_achieved_goal)
 
-                # 現在の観測と行動を取り出す
+                # extract current observation and action from the experience
                 observation = observations[future_index]['observation']
                 
-                # 未来の達成ゴールを目的ゴールとして状態を構成
+                # create state representation including the future achieved goal (as if it were the intended goal)
                 state = torch.tensor(np.concatenate((observation, future_achieved_goal, future_achieved_goal)), 
                                      dtype=torch.float32).to(self.device)
 
                 next_observation = next_observations[future_index]['observation']
                 
-                # 同じゴールで次状態を構成
+                # create next state representation with the same goal
                 next_state = torch.tensor(np.concatenate((next_observation, future_achieved_goal, 
                                                           future_achieved_goal)), dtype=torch.float32).to(self.device)
 
-                # 行動を取り出す
+                # extract action from the experience
                 action = torch.tensor(actions[future_index], dtype=torch.float32).to(self.device)
                 
-                # 未来ゴールを達成したと仮定した報酬を計算
+                # calculate reward based on achieving the future goal from the current state and action
                 reward = self.env.unwrapped.compute_reward(future_achieved_goal, future_achieved_goal, 1.0)
 
-                # 生成した経験をバッファへ保存
+                # store augmented experience in buffer
                 state = state.cpu().numpy()
                 action = action.cpu().numpy()
                 next_state = next_state.cpu().numpy()
@@ -484,9 +389,9 @@ class GAILTrainer:
                 
     def construct_feature_vector(self, observation):
         """
-        観測を正規化し、特徴ベクトルを組み立てる。
+        Normalize observation components and construct a feature vector for the given observation.
         """
-        # 観測要素を正規化
+        # normalize observation components
         obs = observation['observation']
         achieved_goal = observation['achieved_goal']
         desired_goal = observation['desired_goal']
@@ -498,7 +403,7 @@ class GAILTrainer:
         normalized_desired_goal = (desired_goal - self.env.observation_space['desired_goal'].low) / \
                                    (self.env.observation_space['desired_goal'].high - self.env.observation_space['desired_goal'].low)
 
-        # 特徴ベクトルを構築
+        # construct feature vector
         feature_vector = np.concatenate((normalized_obs, normalized_achieved_goal, normalized_desired_goal))
 
         return torch.tensor(feature_vector, dtype=torch.float32)
@@ -506,14 +411,12 @@ class GAILTrainer:
                 
     def test_model(self, steps, env=None, save_states=False, render_save_path=None, fps=30):
         """
-        学習済みエージェントを環境で実行する。
-
-        環境の info['is_success'] を集計してエピソード成功フラグを返す。
+        Run the trained agent in the environment.
         """
         if env is None:
             env = self.env
         episode_score = 0
-        state_list = []     # 状態特徴ベクトルを蓄積するリスト
+        state_list = []     # list to store state feature vectors
         
         observation, info = env.reset()
         current_observation = observation['observation']
@@ -527,9 +430,8 @@ class GAILTrainer:
         images = []
         done = False
         truncated = False
-        ep_success = 0.0
         
-        # 環境を指定ステップ実行し、報酬（必要なら状態）を収集
+        # run the environment for some steps and collect rewards (and optionally states)
         with torch.inference_mode():
             for i in range(steps):
                 if render_save_path:
@@ -537,7 +439,7 @@ class GAILTrainer:
 
                 action = self.select_action(state)
 
-                observation, reward, done, truncated, info = env.step(np.array(action))
+                observation, reward, done, truncated, _ = env.step(np.array(action))
                 
                 current_observation = observation['observation']
                 current_achieved_goal = observation['achieved_goal']
@@ -549,10 +451,9 @@ class GAILTrainer:
                 
                 episode_score += reward
 
-                if isinstance(info, dict) and "is_success" in info:
-                    ep_success = max(ep_success, float(info["is_success"]))
-
                 if done or truncated:
+                    if done:
+                        ep_success = 1
                     if render_save_path:
                         images.append(env.render())
                     break
@@ -563,6 +464,9 @@ class GAILTrainer:
             with open(f'{render_save_path}.gif', 'rb') as f:
                 display.display(display.Image(data=f.read(), format='gif'))
                 
+        # Determine if episode was successful (done without truncation)
+        ep_success = 1 if done else 0
+        
         if not save_states:
             return episode_score, ep_success
         else:
@@ -571,7 +475,7 @@ class GAILTrainer:
                 
     def save_model(self):
         """
-        学習済みモデルを保存する。
+        Save trained models.
         """
         torch.save(self.actor.state_dict(), self.actor.checkpoints_file)
         torch.save(self.critic_1.state_dict(), self.critic_1.checkpoints_file)
@@ -582,7 +486,7 @@ class GAILTrainer:
 
     def load_model(self):
         """
-        学習済みモデルを読み込む。
+        Load trained models.
         """
         self.is_trained = True
         self.actor.load_state_dict(torch.load(self.actor.checkpoints_file))
@@ -593,9 +497,9 @@ class GAILTrainer:
         self.target_critic_2.load_state_dict(torch.load(self.target_critic_2.checkpoints_file))
         
         
-    def plot_scores(self, scores, avg_scores, plot_save_path, plot_title=None):
+    def plot_scores(self, scores, avg_scores, plot_save_path):
         """
-        エージェントの性能をプロットする。
+        Plot performance of agent.
         """
         plt.figure(figsize=(10,8))
         plt.plot(scores)
