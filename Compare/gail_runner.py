@@ -73,7 +73,8 @@ def train_apprentices():
     
     all_results = []
     
-    for i in range(NUM_APPRENTICES):
+    # Start from 1 to match TD3 (which uses Apprentice 0 for initial exploration)
+    for i in range(1, NUM_APPRENTICES):
         print(f"\n{'='*70}")
         print(f"  GAIL Apprentice {i} Training")
         print(f"{'='*70}\n")
@@ -156,9 +157,10 @@ def evaluate_apprentices(episodes=None):
     
     all_eval_results = []
     
-    for i in range(NUM_APPRENTICES):
+    # Start from 1 to match train_apprentices (skipping Apprentice 0)
+    for i in range(1, NUM_APPRENTICES):
         iter_path = GAIL_MODELS_DIR / f"Apprentice_{i}"
-        if not (iter_path / "actor.pt").exists():
+        if not (iter_path / "actor.pth").exists():
             print(f"GAIL Apprentice {i} model not found at {iter_path}. Skipping.")
             continue
         

@@ -13,7 +13,8 @@ N_EPISODES_EXPERT = 500
 N_EPISODES_APPRENTICE = 500
 OPT_STEPS = 10
 BATCH_SIZE = 256
-EXPLORATION_PERIOD = 100
+EXPLORATION_PERIOD = 100  # For Apprentices (Matches TD3 default)
+EXPLORATION_PERIOD_EXPERT = 300  # For Expert training (Matches TD3 notebook)
 PRINT_EVERY = 50
 
 # Number of apprentices (0 to 3 = 4 total)
@@ -41,7 +42,7 @@ EXPERT_EVAL_EPISODES = 500
 
 # Feature expectation computation
 FEATURE_EXPECTATION_EPISODES = 1000
-FEATURE_EXPECTATION_EPISODES_APPRENTICE = 500
+FEATURE_EXPECTATION_EPISODES_APPRENTICE = 2000  # Matches TD3 notebook default (m=2000)
 
 # Paths
 COMPARE_DIR = Path(__file__).resolve().parent

@@ -73,6 +73,11 @@ def plot_comparative_dashboard(phase_name, expert_data, apprentices_data, window
     Plot comparative dashboard:
     - expert_data: {'name': 'Expert', 'scores': [], 'successes': []}
     - apprentices_data: list of {'name': 'Apprentice X', 'scores': [], 'successes': []}
+    
+    If save_path is provided (e.g., '.../TD3_vs_GAIL_Comparison.png'), saves 3 separate PNG files:
+    - .../TD3_vs_GAIL_Comparison_Performance.png
+    - .../TD3_vs_GAIL_Comparison_SuccessRate.png
+    - .../TD3_vs_GAIL_Comparison_Raster.png
     """
     if not apprentices_data:
         print("No apprentice data to plot.")
@@ -85,11 +90,21 @@ def plot_comparative_dashboard(phase_name, expert_data, apprentices_data, window
     for app in apprentices_data:
         max_len = max(max_len, len(app.get('scores', [])))
 
-    fig, axes = plt.subplots(3, 1, figsize=(14, 12))
     cmap = plt.get_cmap('tab10')
+    
+    # Determine save paths for individual plots
+    save_dir = None
+    base_name = None
+    if save_path:
+        from pathlib import Path
+        p = Path(save_path)
+        save_dir = p.parent
+        base_name = p.stem  # filename without extension
+        if not save_dir.exists():
+            save_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Plot 1: Performance (Scores) ---
-    ax1 = axes[0]
+    fig1, ax1 = plt.subplots(figsize=(14, 5))
     if expert_data and expert_data.get('scores'):
         scores = expert_data['scores']
         if len(scores) > window_size:
@@ -112,9 +127,15 @@ def plot_comparative_dashboard(phase_name, expert_data, apprentices_data, window
     ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax1.grid(True)
     ax1.set_xticks(np.arange(0, max_len + 1, 50))
+    plt.tight_layout()
+    if save_dir and base_name:
+        perf_path = save_dir / f"{base_name}_Performance.png"
+        plt.savefig(perf_path, dpi=150, bbox_inches='tight')
+        print(f"Saved {perf_path}")
+    plt.show()
 
     # --- Plot 2: Success Rate ---
-    ax2 = axes[1]
+    fig2, ax2 = plt.subplots(figsize=(14, 5))
     if expert_data and expert_data.get('successes'):
         succ = expert_data['successes']
         if len(succ) > window_size:
@@ -138,9 +159,15 @@ def plot_comparative_dashboard(phase_name, expert_data, apprentices_data, window
     ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax2.grid(True)
     ax2.set_xticks(np.arange(0, max_len + 1, 50))
+    plt.tight_layout()
+    if save_dir and base_name:
+        succ_path = save_dir / f"{base_name}_SuccessRate.png"
+        plt.savefig(succ_path, dpi=150, bbox_inches='tight')
+        print(f"Saved {succ_path}")
+    plt.show()
 
     # --- Plot 3: Raster Plot ---
-    ax3 = axes[2]
+    fig3, ax3 = plt.subplots(figsize=(14, 5))
     event_collection = []
     colors = []
     labels = []
@@ -173,10 +200,11 @@ def plot_comparative_dashboard(phase_name, expert_data, apprentices_data, window
     ax3.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax3.grid(True, axis='x')
     ax3.set_xticks(np.arange(0, max_len + 1, 50))
-    
     plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    if save_dir and base_name:
+        raster_path = save_dir / f"{base_name}_Raster.png"
+        plt.savefig(raster_path, dpi=150, bbox_inches='tight')
+        print(f"Saved {raster_path}")
     plt.show()
 
 
@@ -268,17 +296,21 @@ def plot_apprentice_comparison(algorithm_name, apprentice_data_list, window_size
     _setup_plot("Binary Success Raster", "Raster", lambda: "", plot_raster)
 
 
-def plot_cross_algorithm_comparison(td3_data_list, gail_data_list, window_size=50, save_path=None):
+def plot_cross_algorithm_comparison(td3_data_list, gail_data_list, window_size=50, save_path=None, phase_name="Training"):
     """
     Compare TD3 vs GAIL for each Apprentice (1, 2, 3).
 
-    NEW behavior:
-    - For each Apprentice (1,2,3), create ONE figure with 3 rows x 1 column:
+    Args:
+        td3_data_list: List of TD3 apprentice results (train_data or eval_data)
+        gail_data_list: List of GAIL apprentice results (train_data or eval_data)
+        window_size: Smoothing window size
+        save_path: Base save path (directory inferred from this)
+        phase_name: "Training" or "Evaluation" - used in titles and filenames
+
+    Produces 3 figures (one per Apprentice), each with 3 rows:
       1) Performance (Scores)  : TD3 & GAIL overlaid
       2) Success Rate          : TD3 & GAIL overlaid
-      3) Binary Success Raster : TD3 & GAIL in one axis (different y-offsets)
-    - This produces 3 figures total (one per Apprentice).
-    - If save_path is specified, saves 3 PNG files (one per Apprentice) to the directory of save_path.
+      3) Binary Success Raster : TD3 & GAIL in one axis
     """
     # Filter to only Apprentice 1, 2, 3
     td3_filtered = {d['id']: d for d in td3_data_list if d.get('id', -1) in [1, 2, 3]}
@@ -411,11 +443,11 @@ def plot_cross_algorithm_comparison(td3_data_list, gail_data_list, window_size=5
         ax3.grid(True, axis='x')
         ax3.set_xticks(np.arange(0, max_len + 1, 50))
 
-        fig.suptitle(f"TD3 vs GAIL - Apprentice {app_id} (3×1)", fontsize=14, fontweight='bold')
+        fig.suptitle(f"TD3 vs GAIL ({phase_name}) - Apprentice {app_id}", fontsize=14, fontweight='bold')
         plt.tight_layout(rect=(0, 0, 1, 0.95))
 
         if save_dir:
-            final_save_path = save_dir / f"TD3_vs_GAIL_Apprentice_{app_id}_3x1.png"
+            final_save_path = save_dir / f"TD3_vs_GAIL_{phase_name}_Apprentice_{app_id}.png"
             plt.savefig(final_save_path, dpi=150, bbox_inches='tight')
             print(f"Saved {final_save_path}")
 
