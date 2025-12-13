@@ -1,50 +1,63 @@
-# 逆強化学習を用いた連続制御の学習
+日本語版READMEは[こちら](README_JP.md)
 
-本研究では、panda-gymツールキットに含まれるPandaReach-v3環境において、7自由度（7 DOF）のロボットアームエージェントの訓練に焦点を当てる。PandaReach-v3タスクでは、シミュレーション環境内で目標オブジェクトに到達するようロボットアームを制御する。本研究では、このタスク向けに高度な連続制御アルゴリズムであるDeep Deterministic Policy Gradient（DDPG）およびTwin Delayed Deep Deterministic Policy Gradient（TD3）を適用してエージェントを訓練する。さらに、P. AbbeelとA. Y. Ngによる論文「Apprenticeship Learning via Inverse Reinforcement Learning」で提案された投影ベースの逆強化学習アルゴリズムを活用し、訓練済みエージェントを専門家エージェントとして用いながら、同一タスクを実行する見習いエージェントを訓練する。見習いエージェントは連続制御領域において効果的に訓練され、単一の見習いエージェント（IRL段階でTD3を用いて訓練）は専門家エージェントの性能をも上回る成果を達成した。この結果は、逆強化学習が連続制御タスクにおいて効果的に適用可能であることを明確に示している。
+# Learning Continuous Control using Inverse Reinforcement Learning
+
+This project focuses on training a 7 DOF robotic arm agent from the PandaReach-v3 environment available in the panda-gym toolkit. The PandaReach-v3 task involves controlling a robotic arm to reach target objects in a simulated environment.We explore advanced algorithms for continuous control: Deep Deterministic Policy Gradient (DDPG) and Twin Delayed Deep Deterministic Policy Gradient (TD3) to train the agent for this task. Further, we use the projection-based inverse reinforcement learning algorithm based on the paper “Apprenticeship Learning via Inverse Reinforcement Learning" by P. Abbeel and A. Y. Ng to train apprentice agents for the same task by using the trained agents as the expert agents. The apprentice agents are trained succesfully in the continouous domain and attain performances close to the expert with one apprentice agent (trained using TD3 in the IRL step) surpassing even the expert's performance. This demonstrates the successful application of inverse reinforcement learning in continuous control tasks.
 
 <p align="center">
   <img src="assets/Trained%20Agent.gif"/>
 </p>
 
-## 連続制御問題向け強化学習アルゴリズム
+## Reinforcement Learning algorithms for Continuous Control
 
-連続強化学習アルゴリズムは、ロボットアームの関節角度制御のように連続的なアクション空間を扱う環境向けに設計されている。これらのアルゴリズムの目的は、観測された状態空間から連続的なアクション空間への効果的なポリシーを発見し、期待報酬の累積を最大化することにある。
+Continuous reinforcement learning algorithms are designed to handle environments where actions are continuous, like controlling robotic arm joints with precision. These algorithms aim to discover policies that effectively map observed states to continuous actions, optimizing the accumulation of expected rewards. 
 
 ### DDPG
 
-DDPG（Deep Deterministic Policy Gradient）は、連続的な行動空間向けに設計されたアクター・クリティック型アルゴリズムである。ポリシー勾配法とQ学習の長所を統合した手法であり、DDPGではアクターネットワークがポリシーを学習する一方、クリティックネットワークが行動価値関数（Q関数）を近似する。アクターネットワークは連続的な行動を直接出力し、これがクリティックネットワークによって評価されることで最適な行動が導出される仕組みとなっている。
+DDPG is an actor-critic algorithm designed for continuous action spaces. It combines the strengths of policy gradients and Q-learning. In DDPG, an actor network learns the policy, while a critic network approximates the action-value (Q-function). The actor network directly outputs continuous actions, which are evaluated by the critic network to output optimal actions.
 
 ### TD3
 
-TD3はDDPGを改良したアルゴリズムであり、過大評価バイアスなどの課題を解決している。Q値推定のためにツインクリティックを導入しており、DDPGが単一のクリティックネットワークを使用するのに対し、TD3では2つのクリティックネットワークを採用している。さらに訓練の安定化を図るため、更新を遅延させたターゲットネットワークも活用している。TD3はその堅牢性とDDPGを上回る性能向上が評価されている。
+TD3 builds upon DDPG, addressing issues such as overestimation bias. It introduces twin critics to estimate the Q-value, employing two critic networks instead of one as in DDPG. Additionally, it utilizes target networks with delayed updates to stabilize training. TD3 is recognized for its robustness and enhanced performance compared to DDPG.
 
-## 事後的経験再生（Hindsight Experience Replay: HER）
+## Hindsight Experience Replay (HER)
+Hindsight Experience Replay (HER) is a technique developed to tackle the challenge of sparse and binary rewards in reinforcement learning (RL) environments. In many robotic tasks, achieving the desired goal is rare, leading traditional RL algorithms to struggle with learning from such feedback. HER addresses this by repurposing past experiences for learning, regardless of whether they resulted in the desired goal. By relabeling failed attempts as succesful ones and storing both experiences in a replay buffer, the agent can learn from both successful and failed attempts, significantly improving the learning process.
 
-事後的経験再生（Hindsight Experience Replay: HER）は、強化学習（Reinforcement Learning: RL）環境における報酬の稀少性と二値性という課題に対処するために開発された手法である。多くのロボットタスクにおいて、所望の目標を達成することは稀であり、従来のRLアルゴリズムはこのようなフィードバックからの学習に困難を伴う。HERはこの問題に対し、過去の経験を再利用して学習を行う手法として考案された。具体的には、失敗に終わった試行を成功事例として再ラベル付けし、成功事例とともに再生バッファに格納することで、エージェントは成功例だけでなく失敗例からも学習可能となる。これにより、学習プロセスが大幅に改善される効果が得られる。
+## Inverse Reinforcement Learning
 
-## 逆強化学習
+Apprenticeship Learning via Inverse Reinforcement Learning combines principles of reinforcement learning and inverse reinforcement learning to enable agents to learn from expert demonstrations. The agent learns to perform a task by observing demonstrations provided by an expert, without explicit guidance or reward signals. Instead of learning directly from rewards, the algorithm seeks to infer the underlying reward function from the expert demonstrations and then optimize the agent's behavior based on this inferred reward function.
 
-逆強化学習に基づく見習い学習（Apprenticeship Learning via Inverse Reinforcement Learning）は、強化学習と逆強化学習の原理を統合した手法であり、エージェントが専門家のデモンストレーションから学習することを可能にする。この手法では、エージェントは専門家が提供するデモンストレーションを観察することで、明示的な指示や報酬信号なしにタスクを実行する方法を学習する。直接的に報酬から学習するのではなく、アルゴリズムは専門家のデモンストレーションから背後にある報酬関数を推論し、その推論された報酬関数に基づいてエージェントの行動を最適化する。
+One approach to implementing this is the Projection Method Algorithm, which iteratively refines the agent's policy based on the difference between the expert's behavior and the agent's behavior. At each iteration, the algorithm computes a weight vector that maximally separates the expert's feature expectations from the agent's feature expectations, subject to a constraint on the norm of the weight vector. This weight vector is then used to derive rewards and train the agent's policy using the above stated algorithms, and the process repeats until convergence. At least one of the trained apprentices performs at least as well as the expert within ϵ.
 
-この手法を実装する一つの方法として、投影法アルゴリズムが挙げられる。このアルゴリズムは、専門家の行動とエージェントの行動の差異に基づいて、エージェントのポリシーを反復的に改良する。各反復処理において、アルゴリズムは重みベクトルを計算するが、この重みベクトルは専門家の特徴量期待値とエージェントの特徴量期待値を、重みベクトルのノルムに関する制約条件の下で最大限に分離するように設計される。この重みベクトルを用いて報酬を算出し、前述のアルゴリズムに従ってエージェントのポリシーを訓練する。このプロセスは収束するまで繰り返される。少なくとも1体の訓練済み見習いエージェントは、専門家のパフォーマンスをϵの範囲内まで達成することができる。
+## Comparison of TD3 and GAIL
 
-## 結果
+This repository includes a dedicated `Compare` directory for benchmarking TD3-IRL against Generative Adversarial Imitation Learning (GAIL).
+
+### Key Features
+- **Algorithm Comparison**: Direct comparison of TD3-based Projection Method IRL and GAIL in the PandaReach-v3 environment.
+- **Consistent HER Implementation**: Verified that both TD3 and GAIL implementations correctly utilize Hindsight Experience Replay (HER) with a future strategy (k=4) to handle sparse rewards effectively.
+- **Enhanced Plotting**: 
+    - **Comparative Dashboard**: Visualizes Expert vs. Apprentice performance (Scores and Success Rates) in a unified view.
+    - **Cross-Algorithm Comparison**: Specifically compares TD3 Apprentice 1 vs GAIL Apprentice 1, etc., to analyze learning efficiency and final performance.
+    - **Filtered Views**: Evaluation plots automatically exclude "Apprentice 0" (the initial random/untrained baseline) to focus on the learning progress of active apprentices.
+
+## Results:
 
 ### DDPG
 
-- エキスパートは500エピソードで学習
-- 1000エピソードでのエキスパート平均報酬 = -1.768
+- The expert is trained for 500 episodes
+- Average reward of the expert over 1000 episodes = -1.768
 
 <p align="center">
   <img src="Results/DDPG/Expert%20Performance.png" width="300" />
   <img src="Results/DDPG/Expert%20Policy.gif" width="350"/>
-  <p align="center">Q学習で訓練したCartPoleエキスパート</p>
+  <p align="center">PandaReach expert trained using DDPG </p>
 </p>
 
-#### 弟子エージェント
+#### Apprentice agents
 
-- IRL アルゴリズムで10体の弟子エージェントを学習。
-- 最良の弟子は500エピソードで平均報酬 -1.852 を達成。
+- Ten apprentices were trained using the IRL algorithm.
+- The best performing apprentice agent has an average reward of -1.852 over 500 episodes.
 
 <p align="center">
   <img src="Results/DDPG/Apprentice_1%20Performance.png" width="250"/>
@@ -68,19 +81,19 @@ TD3はDDPGを改良したアルゴリズムであり、過大評価バイアス�
 
 ### TD3
 
-- エキスパートは500エピソードで学習
-- 1000エピソードでのエキスパート平均報酬 = -1.932
+- The expert is trained for 500 episodes
+- Average reward of the expert over 1000 episodes = -1.932
 
 <p align="center">
   <img src="Results/TD3/Expert%20Performance.png" width="300" />
   <img src="Results/TD3/Expert%20Policy.gif" width="350"/>
-  <p align="center">Q学習で訓練したCartPoleエキスパート</p>
+  <p align="center">PandaReach expert trained using TD3 </p>
 </p>
 
-#### 弟子エージェント
+#### Apprentice agents
 
-- IRL アルゴリズムで10体の弟子エージェントを学習。
-- 最良の弟子はエキスパートを上回り、500エピソードで平均報酬 -1.852 を達成。
+- Ten apprentices were trained using the IRL algorithm.
+- The best performing apprentice agent surpasses the expert and has an average reward of -1.852 over 500 episodes.
 
 <p align="center">
   <img src="Results/TD3/Apprentice_1%20Performance.png" width="250"/>
@@ -102,11 +115,11 @@ TD3はDDPGを改良したアルゴリズムであり、過大評価バイアス�
   <img src="Results/TD3/Apprentice%2010%20Policy.gif" width="250"/>
 </p>
 
-## ドキュメント
+## Documentation
 
-プロジェクトの概要と実装は [presentation](docs/Learning%20Continuous%20Control%20using%20IRL.pdf) を参照してください。
+For an overview of the project and its implementation, refer to the [presentation](docs/Learning%20Continuous%20Control%20using%20IRL.pdf) file.
 
-## 参考文献
+## References:
 - Timothy P. Lillicrap, Jonathan J. Hunt, Alexander Pritzel, Nicolas Heess, Tom Erez, Yuval Tassa, David Silver, & Daan Wierstra. (2015). Continuous control with deep reinforcement learning.
 - Scott Fujimoto, Herke van Hoof, & David Meger (2018). Addressing Function Approximation Error in Actor-Critic Methods. CoRR, abs/1802.09477.
 - Quentin Gallouédec, Nicolas Cazin, Emmanuel Dellandréa, & Liming Chen. (2021). panda-gym: Open-source goal-conditioned environments for robotic learning.
