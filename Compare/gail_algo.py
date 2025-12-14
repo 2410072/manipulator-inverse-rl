@@ -14,7 +14,10 @@ import torch.nn.functional as F
 
 # 日本語フォント設定
 import matplotlib
-import japanize_matplotlib
+try:
+    import japanize_matplotlib
+except ImportError:
+    pass
 
 class ExpertLoader:
     """エキスパートの状態・行動ペアをミニバッチで返すステートフルなイテレータ。"""
@@ -280,7 +283,7 @@ class GAILTrainer:
         
         if render_save_path:
             env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 
-                              episode_trigger=lambda t: t % (n_episodes//10) == 0, disable_logger=True)
+                              episode_trigger=lambda t: t % max(1, (n_episodes//10)) == 0, disable_logger=True)
         else:
             env = self.env
         
@@ -385,7 +388,7 @@ class GAILTrainer:
                 )
             
             # モデルを保存
-            if self.model_save_path and i % (n_episodes//10)==0:
+            if self.model_save_path and i % max(1, (n_episodes//10))==0:
                 self.save_model()
                 
         # 学習性能をプロット

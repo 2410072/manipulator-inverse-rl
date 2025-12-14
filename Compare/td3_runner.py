@@ -13,8 +13,8 @@ if current_dir not in sys.path:
 
 # Import config and utils
 from config import (
-    N_EPISODES_EXPERT, N_EPISODES_APPRENTICE, OPT_STEPS, BATCH_SIZE,
-    EXPLORATION_PERIOD, PRINT_EVERY, NUM_APPRENTICES,
+    N_EPISODES_EXPERT, N_EPISODES_APPRENTICE, N_EPISODES_APPRENTICE_0, OPT_STEPS, BATCH_SIZE,
+    EXPLORATION_PERIOD, EXPLORATION_PERIOD_EXPERT, PRINT_EVERY, NUM_APPRENTICES,
     EXPERT_CHECK_STEPS, FEATURE_CALC_STEPS,
     EXPERT_MODEL_PATH, TD3_MODELS_DIR, TD3_RESULTS_DIR,
     EXPERT_EVAL_EPISODES, FEATURE_EXPECTATION_EPISODES, FEATURE_EXPECTATION_EPISODES_APPRENTICE,
@@ -58,7 +58,7 @@ def train_expert(n_episodes=None, force_retrain=False):
         input_dims=obs_shape,
         agent_name='Expert',
         model_save_path=str(expert_path) + "/",
-        exploration_period=300,  # Matched to TD3 notebook
+        exploration_period=EXPLORATION_PERIOD_EXPERT,
         alpha=ALPHA, beta=BETA, gamma=GAMMA, tau=TAU,
         batch_size=BATCH_SIZE, replay_size=REPLAY_SIZE,
         update_actor_every=UPDATE_ACTOR_EVERY, noise_factor=NOISE_FACTOR
@@ -146,11 +146,12 @@ def train_apprentices(expert=None, m=None):
         )
     
     # Compute expert feature expectation
-    if m is None:
-        m = FEATURE_EXPECTATION_EPISODES
-    print(f"Computing Expert feature expectation with {m} episodes...")
+    m_expert = m
+    if m_expert is None:
+        m_expert = FEATURE_EXPECTATION_EPISODES
+    print(f"Computing Expert feature expectation with {m_expert} episodes...")
     expert_feature_expectation, expert_mean_reward = compute_average_feature(
-        expert, m=m, steps=FEATURE_CALC_STEPS
+        expert, m=m_expert, steps=FEATURE_CALC_STEPS, env=env
     )
     
     # Initialize projection method variables
@@ -219,9 +220,12 @@ def train_apprentices(expert=None, m=None):
             update_actor_every=UPDATE_ACTOR_EVERY, noise_factor=NOISE_FACTOR
         )
         
+        # Determine number of episodes based on apprentice index
+        n_episodes_current = N_EPISODES_APPRENTICE_0 if i == 0 else N_EPISODES_APPRENTICE
+
         # Train
         score_hist, avg_score_hist, success_hist, avg_success_hist = apprentice.td3_train(
-            n_episodes=N_EPISODES_APPRENTICE,
+            n_episodes=n_episodes_current,
             opt_steps=OPT_STEPS,
             reward_weights=weights[-1],
             print_every=PRINT_EVERY,
@@ -231,10 +235,11 @@ def train_apprentices(expert=None, m=None):
         # Save model
         apprentice.save_model()
         # Compute feature expectation
-        if m is None:
-             m = FEATURE_EXPECTATION_EPISODES_APPRENTICE
+        m_apprentice = m
+        if m_apprentice is None:
+             m_apprentice = FEATURE_EXPECTATION_EPISODES_APPRENTICE
         app_feature, app_reward = compute_average_feature(
-            apprentice, m=m, steps=FEATURE_CALC_STEPS
+            apprentice, m=m_apprentice, steps=FEATURE_CALC_STEPS
         )
         feature_expectation.append(app_feature)
         
@@ -260,7 +265,6 @@ def train_apprentices(expert=None, m=None):
     # Plot apprentice comparison after all training is complete
     from plotting import plot_apprentice_comparison
     # Plot apprentice comparison after all training is complete
-    from plotting import plot_apprentice_comparison
     plot_apprentice_comparison(
         "TD3",
         all_results,
@@ -312,6 +316,10 @@ def evaluate_apprentices():
     return all_eval_results
 
 
+from plotting import plot_individual_performance, plot_comparative_dashboard, plot_apprentice_comparison
+
+# ... (imports remain same) ...
+
 def plot_all_comparisons(expert_train_data, expert_eval_data, apprentice_train_data, apprentice_eval_data):
     """Plot all comparative dashboards."""
     
@@ -330,6 +338,13 @@ def plot_all_comparisons(expert_train_data, expert_eval_data, apprentice_train_d
             "TD3 Learning Phase Comparison",
             expert_dash, apprentices_dash,
             save_path=str(TD3_RESULTS_DIR / "TD3_Learning_Comparison.png")
+        )
+        
+        # Within-algorithm comparison (Apprentice 1-3)
+        plot_apprentice_comparison(
+            "TD3",
+            apprentice_train_data,
+            save_dir=TD3_RESULTS_DIR
         )
     
     # Evaluation phase comparison

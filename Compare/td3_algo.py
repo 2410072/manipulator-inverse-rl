@@ -232,7 +232,7 @@ class TD3Trainer:
         
         if render_save_path:
             env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 
-                              episode_trigger=lambda t: t % (n_episodes//10) == 0, disable_logger=True)
+                              episode_trigger=lambda t: t % max(1, (n_episodes//10)) == 0, disable_logger=True)
         else:
             env = self.env
         
@@ -334,7 +334,7 @@ class TD3Trainer:
                 )
             
             # save model
-            if self.model_save_path and i % (n_episodes//10)==0:
+            if self.model_save_path and i % max(1, (n_episodes//10))==0:
                 self.save_model()
                 
         # Plot training performance

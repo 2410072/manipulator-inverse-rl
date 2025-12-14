@@ -14,12 +14,12 @@ def create_env():
     
     # Preventing "Only one local in-process GUI/GUI_SERVER connection allowed" error
     # If a previous environment wasn't closed properly, PyBullet might still be connected.
-    # try:
-    #     import pybullet
-    #     if pybullet.isConnected():
-    #         pybullet.disconnect()
-    # except ImportError:
-    #     pass
+    try:
+        import pybullet
+        if pybullet.isConnected():
+            pybullet.disconnect()
+    except ImportError:
+        pass
 
     env = gym.make(
         ENV_NAME,
@@ -42,7 +42,7 @@ def get_obs_shape(env):
     )
 
 
-def compute_average_feature(agent, m=2000, steps=1000):
+def compute_average_feature(agent, m=2000, steps=1000, env=None):
     """
     Compute average feature vector (feature expectation) and mean reward over m episodes.
     """
@@ -50,7 +50,8 @@ def compute_average_feature(agent, m=2000, steps=1000):
         feature_sum, reward_sum = None, None
 
         for i in tqdm(range(m), desc='Computing features and rewards'):
-            reward, success, states = agent.test_model(steps=steps, save_states=True)
+            # Pass external env if provided, otherwise agent uses its own
+            reward, success, states = agent.test_model(steps=steps, env=env, save_states=True)
 
             episode_mean = torch.stack(states).mean(0)
 

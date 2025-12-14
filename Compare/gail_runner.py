@@ -16,6 +16,7 @@ from config import (
     N_EPISODES_APPRENTICE, OPT_STEPS, BATCH_SIZE,
     EXPLORATION_PERIOD, PRINT_EVERY, NUM_APPRENTICES,
     FEATURE_CALC_STEPS,
+    ALPHA, BETA, GAMMA, TAU, REPLAY_SIZE, NOISE_FACTOR, UPDATE_ACTOR_EVERY,
     EXPERT_MODEL_PATH, GAIL_MODELS_DIR, GAIL_RESULTS_DIR, EXPERT_TRAJECTORIES_PATH,
     TD3_MODELS_DIR
 )
@@ -91,6 +92,13 @@ def train_apprentices():
             model_save_path=str(iter_save_path) + "/",
             exploration_period=EXPLORATION_PERIOD,
             batch_size=BATCH_SIZE,
+            alpha=ALPHA,
+            beta=BETA,
+            gamma=GAMMA,
+            tau=TAU,
+            replay_size=REPLAY_SIZE,
+            noise_factor=NOISE_FACTOR,
+            update_actor_every=UPDATE_ACTOR_EVERY,
             disc_lr=3e-4,
             disc_updates=2,
             gail_reward_scale=1.0,
@@ -194,6 +202,10 @@ def evaluate_apprentices(episodes=None):
     return all_eval_results
 
 
+from plotting import plot_individual_performance, plot_comparative_dashboard, plot_apprentice_comparison
+
+# ... (imports remain same) ...
+
 def plot_all_comparisons(apprentice_train_data, apprentice_eval_data):
     """Plot all GAIL comparative dashboards."""
     
@@ -207,6 +219,13 @@ def plot_all_comparisons(apprentice_train_data, apprentice_eval_data):
             "GAIL Learning Phase Comparison",
             None, apprentices_dash,
             save_path=str(GAIL_RESULTS_DIR / "GAIL_Learning_Comparison.png")
+        )
+        
+        # Within-algorithm comparison (Apprentice 1-3)
+        plot_apprentice_comparison(
+            "GAIL",
+            apprentice_train_data,
+            save_dir=GAIL_RESULTS_DIR
         )
     
     # Evaluation phase comparison
