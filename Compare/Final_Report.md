@@ -92,7 +92,7 @@ The core reinforcement learning algorithm used for both generating expert trajec
 
 ### 2.2 Inverse Reinforcement Learning (Projection Method)
 
-Our first imitation learning approach relies on Feature-Matching IRL, utilizing the projection algorithms proposed by Abbeel & Ng [2]. Unlike the Expert which optimizes a known, sparse environment reward, Apprentices must infer a reward function that rationalizes the Expert's behavior. The fundamental assumption is that the expert is optimizing a linear combination of features, $R(s) = w^T \phi(s)$. The goal is therefore to find a policy $\pi$ such that its feature expectations match those of the expert $\mu_E$.
+Our first imitation learning approach relies on Feature-Matching IRL, utilizing the projection algorithms proposed by Abbeel & Ng [2]. Unlike the Expert which optimizes a known, sparse environment reward, Apprentices (1-10) must infer a reward function that rationalizes the Expert's behavior. The fundamental assumption is that the expert is optimizing a linear combination of features, $R(s) = w^T \phi(s)$. The goal is therefore to find a policy $\pi$ such that its feature expectations match those of the expert $\mu_E$.
 
 As discussed in [2] and later analyzed by Xu et al. [10] regarding average-reward criteria, we adopt a game-theoretic approach (Projection Method). This iterative process can be viewed as finding a point in the convex hull of apprentice feature expectations that is closest to the expert's feature expectation.
 
@@ -209,13 +209,13 @@ The IRL apprentices demonstrate robust learning due to the stable linear reward 
 *Specific Observation:* The apprentices consistently converge to a return of approximately **-1.9**, which closely aligns with the theoretical upper bound for this distance-based task. The learning variance is notably low, suggesting a stable gradient landscape.
 
 ![TD3 Learning Comparison - Performance](Results/TD3/TD3_Learning_Comparison_Performance.png)
-*Figure 1: Smoothed performance score of TD3 Apprentices (1-3) during training.*
+*Figure 1: Smoothed performance score of TD3 Apprentices (1-10) during training.*
 
 Complementing the score, the **training success rate** provides a tangible measure of task completion. As seen below, the success rate rises monotonically and approaches 1.0 (100%), confirming that the apprentices reliably learn to reach the target under the IRL reward.
 *Specific Observation:* Success rates exceed **90%** after approximately 1500 timesteps and stabilize at **near 100%**, indicating that the recovered reward function effectively penalizes deviations from the goal.
 
 ![TD3 Learning Comparison - Success Rate](Results/TD3/TD3_Learning_Comparison_SuccessRate.png)
-*Figure 2: Moving average success rate of TD3 Apprentices (1-3) during training.*
+*Figure 2: Moving average success rate of TD3 Apprentices (1-10) during training.*
 
 ![TD3 Learning Comparison - Raster](Results/TD3/TD3_Learning_Comparison_Raster.png)
 *Figure 3: Binary Success Raster for TD3 Apprentices.*
@@ -297,8 +297,9 @@ To synthesize the evaluation results, we present a cross-algorithm dashboard com
 **Results and Consideration:**
 The comparative dashboard provides crucial insights into the stability-efficiency trade-off:
 1.  **Performance & Reliability**: Both algorithms achieve comparable peak performance, with mean returns hovering around -2.0. However, the TD3 (IRL) success rate raster is noticeably more uniform. GAIL, while highly successful, exhibits occasional "flickering" in the raster plot (sparse failure modes), which is characteristic of the adversarial instability.
-2.  **Mode Coverage**: The dense yellow blocks in the TD3 raster indicate that the IRL agent has learned a robust policy that generalizes well across all evaluation starting states. The GAIL raster, while largely successful, suggests slightly higher sensitivity to initial conditions.
-3.  **Conclusion**: For safety-critical robotic applications where reliability is paramount, the projection-based IRL approach (TD3) offers a distinct advantage due to its stationary reward function. GAIL remains a powerful tool for rapid prototyping given its sample efficiency, but may require additional stabilization mechanics for deployment.
+2.  **Mode Coverage**: The dense yellow blocks in the TD3 raster indicate that the IRL agent has learned a robust policy that generalizes well. The GAIL raster, while largely successful, suggests slightly higher sensitivity to initial conditions.
+3.  **Cross-Algorithm Comparison**: As shown in the new Average Success Rate Comparison plots, TD3 maintains a higher overall consistency across the expanded 10-apprentice set.
+4.  **Conclusion**: For safety-critical robotic applications where reliability is paramount, the projection-based IRL approach (TD3) offers a distinct advantage due to its stationary reward function. GAIL remains a powerful tool for rapid prototyping given its sample efficiency.
 
 
 ## 5. Discussion

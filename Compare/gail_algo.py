@@ -4,7 +4,9 @@ import panda_gym
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import imageio
+import imageio
 from IPython import display
+from IPython.display import Video
 
 import os
 import torch
@@ -560,10 +562,19 @@ class GAILTrainer:
                     break
 
         if render_save_path:
-            # env.close()
-            imageio.mimsave(f'{render_save_path}.gif', images, fps=fps, loop=0)
-            with open(f'{render_save_path}.gif', 'rb') as f:
-                display.display(display.Image(data=f.read(), format='gif'))
+            save_path = str(render_save_path)
+            # Check extension, if missing default to .mp4
+            if not (save_path.endswith('.gif') or save_path.endswith('.mp4')):
+                save_path += '.mp4'
+            
+            imageio.mimsave(save_path, images, fps=fps)
+            print(f"Animation saved to {save_path}")
+            
+            if save_path.endswith('.gif'):
+                with open(save_path, 'rb') as f:
+                    display.display(display.Image(data=f.read(), format='gif'))
+            elif save_path.endswith('.mp4'):
+                display.display(Video(save_path, embed=True, html_attributes='autoplay loop muted'))
                 
         if not save_states:
             return episode_score, ep_success

@@ -222,78 +222,310 @@ def plot_apprentice_comparison(algorithm_name, apprentice_data_list, window_size
     save_dir: Directory Path (Path object or string) to save the images.
     """
     # Filter to only include Apprentice 1, 2, 3 (indices 1, 2, 3 in the list)
+    # UPDATED: Assuming user still wants this, but we will make it more robust.
+    # However, user asked for top 3 and bottom 3 in ADDITION.
+    # So we keep this for legacy reasons or basic 1-3 plot.
+    
     filtered_data = [d for d in apprentice_data_list if d.get('id', -1) in [1, 2, 3]]
 
     if len(filtered_data) < 3:
-        print(f"Not enough apprentice data for comparison (need Apprentice 1-3). Skipping.")
+        print(f"Not enough apprentice data for comparison (need Apprentice 1-3). Skipping standard 1-3 plot.")
+        # Proceed anyway if we have at least 1?
+        pass # return or just continue if partial
+
+    if filtered_data:
+        cmap = plt.get_cmap('tab10')
+        max_len = max(len(d.get('scores', [])) for d in filtered_data)
+
+        # helper for common subplot setup
+        def _setup_plot(metric_name, save_suffix, ylabel_func, plot_func):
+            fig, axes = plt.subplots(len(filtered_data), 1, figsize=(12, 4*len(filtered_data)))
+            if len(filtered_data)==1: axes=[axes]
+
+            for row_idx, app_data in enumerate(filtered_data):
+                app_name = app_data.get('name', f'Apprentice_{row_idx+1}')
+                color = cmap(row_idx % 10)
+                ax = axes[row_idx]
+
+                plot_func(ax, app_data, color, window_size, max_len)
+
+                ax.set_title(f"{app_name} - {metric_name}")
+                ax.set_ylabel(ylabel_func())
+                ax.set_xlabel("Episode")
+                if metric_name != "Binary Success Raster":
+                    ax.grid(True)
+                    ax.set_xticks(np.arange(0, len(app_data.get('scores', [])) + 1, 50))
+                else:
+                    ax.grid(True, axis='x')
+                    ax.set_xticks(np.arange(0, max_len + 1, 50))
+
+            fig.suptitle(f"{algorithm_name} Apprentice Comparison (1-3) - {metric_name}", fontsize=14, fontweight='bold')
+            plt.tight_layout(rect=(0, 0, 1, 0.95))
+
+            if save_dir:
+                save_path = f"{save_dir}/{algorithm_name}_Apprentice_Comparison_{save_suffix}.png"
+                plt.savefig(save_path, dpi=150, bbox_inches='tight')
+                print(f"Saved {save_path}")
+            plt.show()
+
+        # 1. Performance
+        def plot_perf(ax, data, color, w, ml):
+            scores = data.get('scores', [])
+            if len(scores) > w:
+                smoothed = [np.mean(scores[max(0, i - w):i + 1]) for i in range(len(scores))]
+                ax.plot(smoothed, color=color, linewidth=2)
+            else:
+                ax.plot(scores, color=color, alpha=0.7)
+
+        _setup_plot("Performance", "Performance", lambda: "Score", plot_perf)
+
+        # 2. Success Rate
+        def plot_succ(ax, data, color, w, ml):
+            succ = data.get('successes', [])
+            if len(succ) > w:
+                smoothed = [np.mean(succ[max(0, i - w):i + 1]) for i in range(len(succ))]
+                ax.plot(smoothed, color=color, linewidth=2)
+            else:
+                ax.plot(succ, color=color, alpha=0.5)
+            ax.set_ylim(-0.05, 1.05)
+
+        _setup_plot("Success Rate", "Success", lambda: "Rate", plot_succ)
+
+        # 3. Raster
+        def plot_raster(ax, data, color, w, ml):
+            succ = data.get('successes', [])
+            indices = [i for i, x in enumerate(succ) if x >= 0.9]
+            if indices:
+                ax.eventplot([indices], lineoffsets=[0], linelengths=0.8, colors=[color])
+            ax.set_yticks([])
+            ax.set_xlim(0, max_len)
+
+        _setup_plot("Binary Success Raster", "Raster", lambda: "", plot_raster)
+
+    # NEW: Plot Ranked and Average
+    # We call these here so they are automatically generated when this function is called by the runners
+    try:
+        plot_ranked_apprentice_comparison(algorithm_name, apprentice_data_list, window_size, save_dir)
+        # Average comparison is cross-algo, so not called here usually.
+        # But we can plot per-algorithm average stats? No, user asked for cross-algo average comparison.
+        # That belongs in plot_cross_algorithm_comparison or separate.
+    except Exception as e:
+        print(f"Error plotting ranked comparison: {e}")
+
+
+def plot_ranked_apprentice_comparison(algorithm_name, apprentice_data_list, window_size=50, save_dir=None):
+    """
+    Sort apprentices by Average Success Rate (or Success Count) and plot:
+    1. Top 3 Performing Apprentices
+    2. Bottom 3 Performing Apprentices
+
+    Uses the same visualization style as plot_apprentice_comparison.
+    """
+    if not apprentice_data_list:
+        print("No apprentice data for ranking.")
         return
 
+    # Filter out Apprentice 0 if desired? Usually Apprentice 0 is random/baseline.
+    # User said "Apprentice 1 to 10". So we filter ID >= 1.
+    valid_data = [d for d in apprentice_data_list if d.get('id', 0) >= 1]
+    
+    if not valid_data:
+        return
+
+    # Calculate score/success metric for ranking
+    # We use overall success rate (sum(successes) / len(successes))
+    ranked_data = []
+    for d in valid_data:
+        succ = d.get('successes', [])
+        if not succ:
+            rate = 0.0
+        else:
+            rate = np.mean(succ)
+        ranked_data.append({'data': d, 'rate': rate})
+    
+    # Sort descending
+    ranked_data.sort(key=lambda x: x['rate'], reverse=True)
+    
+    top_3 = [x['data'] for x in ranked_data[:3]]
+    bottom_3 = [x['data'] for x in ranked_data[-3:]]
+    if len(ranked_data) < 3:
+        bottom_3 = [] # Avoid duplicates if list is short
+    
+    print(f"\n--- {algorithm_name} Top 3 Apprentices ---")
+    for d in top_3:
+        n = d.get('name', 'Unknown')
+        r = np.mean(d.get('successes', []))
+        print(f"  {n}: {r:.2%} success rate")
+        
+    print(f"\n--- {algorithm_name} Bottom 3 Apprentices ---")
+    for d in bottom_3:
+        n = d.get('name', 'Unknown')
+        r = np.mean(d.get('successes', []))
+        print(f"  {n}: {r:.2%} success rate")
+
     cmap = plt.get_cmap('tab10')
-    max_len = max(len(d.get('scores', [])) for d in filtered_data)
-
-    # helper for common subplot setup
-    def _setup_plot(metric_name, save_suffix, ylabel_func, plot_func):
-        fig, axes = plt.subplots(3, 1, figsize=(12, 12))
-
-        for row_idx, app_data in enumerate(filtered_data):
-            app_name = app_data.get('name', f'Apprentice_{row_idx+1}')
-            color = cmap(row_idx % 10)
-            ax = axes[row_idx]
-
-            plot_func(ax, app_data, color, window_size, max_len)
-
-            ax.set_title(f"{app_name} - {metric_name}")
-            ax.set_ylabel(ylabel_func())
-            ax.set_xlabel("Episode")
-            if metric_name != "Binary Success Raster":
-                ax.grid(True)
-                ax.set_xticks(np.arange(0, len(app_data.get('scores', [])) + 1, 50))
+    
+    def _plot_subset(data_subset, title_suffix, file_suffix):
+        if not data_subset: 
+            return
+            
+        max_len = max(len(d.get('scores', [])) for d in data_subset)
+        
+        n_plots = len(data_subset)
+        
+        # --- Performance ---
+        fig, axes = plt.subplots(n_plots, 1, figsize=(12, 4 * n_plots))
+        if n_plots == 1: axes = [axes]
+        
+        for i, app_data in enumerate(data_subset):
+            ax = axes[i]
+            scores = app_data.get('scores', [])
+            # Using rank color (0=gold, 1=silver, 2=bronze approx?) or just cmap
+            color = cmap(i % 10) 
+            if len(scores) > window_size:
+                smoothed = [np.mean(scores[max(0, j - window_size):j + 1]) for j in range(len(scores))]
+                ax.plot(smoothed, color=color, linewidth=2)
             else:
-                ax.grid(True, axis='x')
-                ax.set_xticks(np.arange(0, max_len + 1, 50))
-
-        fig.suptitle(f"{algorithm_name} Apprentice Comparison (1-3) - {metric_name}", fontsize=14, fontweight='bold')
+                ax.plot(scores, color=color, alpha=0.7)
+            
+            ax.set_title(f"{app_data['name']} - Performance")
+            ax.set_ylabel("Score")
+            ax.grid(True)
+            ax.set_xticks(np.arange(0, max_len + 1, 50))
+            
+        fig.suptitle(f"{algorithm_name} ({title_suffix}) - Performance", fontsize=14, fontweight='bold')
         plt.tight_layout(rect=(0, 0, 1, 0.95))
-
         if save_dir:
-            save_path = f"{save_dir}/{algorithm_name}_Apprentice_Comparison_{save_suffix}.png"
-            plt.savefig(save_path, dpi=150, bbox_inches='tight')
-            print(f"Saved {save_path}")
+            plt.savefig(f"{save_dir}/{algorithm_name}_{file_suffix}_Performance.png", dpi=150, bbox_inches='tight')
         plt.show()
 
-    # 1. Performance
-    def plot_perf(ax, data, color, w, ml):
-        scores = data.get('scores', [])
-        if len(scores) > w:
-            smoothed = [np.mean(scores[max(0, i - w):i + 1]) for i in range(len(scores))]
-            ax.plot(smoothed, color=color, linewidth=2)
-        else:
-            ax.plot(scores, color=color, alpha=0.7)
+        # --- Success Rate ---
+        fig, axes = plt.subplots(n_plots, 1, figsize=(12, 4 * n_plots))
+        if n_plots == 1: axes = [axes]
 
-    _setup_plot("Performance", "Performance", lambda: "Score", plot_perf)
+        for i, app_data in enumerate(data_subset):
+            ax = axes[i]
+            succ = app_data.get('successes', [])
+            color = cmap(i % 10)
+            if len(succ) > window_size:
+                smoothed = [np.mean(succ[max(0, j - window_size):j + 1]) for j in range(len(succ))]
+                ax.plot(smoothed, color=color, linewidth=2)
+            else:
+                ax.plot(succ, color=color, alpha=0.5)
+            
+            ax.set_title(f"{app_data['name']} - Success Rate")
+            ax.set_ylabel("Rate")
+            ax.set_ylim(-0.05, 1.05)
+            ax.grid(True)
+            ax.set_xticks(np.arange(0, max_len + 1, 50))
 
-    # 2. Success Rate
-    def plot_succ(ax, data, color, w, ml):
-        succ = data.get('successes', [])
-        if len(succ) > w:
-            smoothed = [np.mean(succ[max(0, i - w):i + 1]) for i in range(len(succ))]
-            ax.plot(smoothed, color=color, linewidth=2)
-        else:
-            ax.plot(succ, color=color, alpha=0.5)
-        ax.set_ylim(-0.05, 1.05)
+        fig.suptitle(f"{algorithm_name} ({title_suffix}) - Success Rate", fontsize=14, fontweight='bold')
+        plt.tight_layout(rect=(0, 0, 1, 0.95))
+        if save_dir:
+            plt.savefig(f"{save_dir}/{algorithm_name}_{file_suffix}_SuccessRate.png", dpi=150, bbox_inches='tight')
+        plt.show()
 
-    _setup_plot("Success Rate", "Success", lambda: "Rate", plot_succ)
+        # --- Raster ---
+        fig, axes = plt.subplots(n_plots, 1, figsize=(12, 4 * n_plots))
+        if n_plots == 1: axes = [axes]
 
-    # 3. Raster
-    def plot_raster(ax, data, color, w, ml):
-        succ = data.get('successes', [])
-        indices = [i for i, x in enumerate(succ) if x >= 0.9]
-        if indices:
-            ax.eventplot([indices], lineoffsets=[0], linelengths=0.8, colors=[color])
-        ax.set_yticks([])
-        ax.set_xlim(0, max_len)
+        for i, app_data in enumerate(data_subset):
+            ax = axes[i]
+            succ = app_data.get('successes', [])
+            color = cmap(i % 10)
+            indices = [idx for idx, x in enumerate(succ) if x >= 0.9]
+            if indices:
+                ax.eventplot([indices], lineoffsets=[0], linelengths=0.8, colors=[color])
+            ax.set_title(f"{app_data['name']} - Success Raster")
+            ax.set_yticks([])
+            ax.set_xlim(0, max_len)
+            ax.grid(True, axis='x')
+            ax.set_xticks(np.arange(0, max_len + 1, 50))
 
-    _setup_plot("Binary Success Raster", "Raster", lambda: "", plot_raster)
+        fig.suptitle(f"{algorithm_name} ({title_suffix}) - Raster", fontsize=14, fontweight='bold')
+        plt.tight_layout(rect=(0, 0, 1, 0.95))
+        if save_dir:
+            plt.savefig(f"{save_dir}/{algorithm_name}_{file_suffix}_Raster.png", dpi=150, bbox_inches='tight')
+        plt.show()
+
+    _plot_subset(top_3, "Top 3", "Top3")
+    # Only plot bottom 3 if distinct from top 3
+    if bottom_3 != top_3:
+        _plot_subset(bottom_3, "Bottom 3", "Bottom3")
+    
+    
+def plot_average_success_comparison(td3_data, gail_data, save_path=None):
+    """
+    Plot bar chart comparing Average Success Rate of TD3 vs GAIL.
+    Calculates the mean success rate across all episodes for each apprentice 1-10,
+    then takes the mean of those means (or success count) to represent the algorithm's performance.
+    AND plots per-apprentice averages side-by-side.
+    """
+    
+    # Filter for 1-10
+    td3_filtered = [d for d in td3_data if d.get('id', -1) >= 1]
+    gail_filtered = [d for d in gail_data if d.get('id', -1) >= 1]
+    
+    if not td3_filtered and not gail_filtered:
+        print("No data for average comparison.")
+        return
+
+    # Calculate stats
+    td3_rates = []
+    gail_rates = []
+    
+    # Map by ID to align them
+    td3_map = {d['id']: np.mean(d.get('successes', [0])) for d in td3_filtered}
+    gail_map = {d['id']: np.mean(d.get('successes', [0])) for d in gail_filtered}
+    
+    all_ids = sorted(list(set(td3_map.keys()) | set(gail_map.keys())))
+    
+    td3_vals = [td3_map.get(i, 0) for i in all_ids]
+    gail_vals = [gail_map.get(i, 0) for i in all_ids]
+    
+    # Plot Grouped Bar Chart
+    x = np.arange(len(all_ids))
+    width = 0.35
+    
+    fig, ax = plt.subplots(figsize=(14, 6))
+    if td3_vals:
+        rects1 = ax.bar(x - width/2, td3_vals, width, label='TD3', color='tab:blue')
+    if gail_vals:
+        rects2 = ax.bar(x + width/2, gail_vals, width, label='GAIL', color='tab:orange')
+    
+    ax.set_ylabel('Average Success Rate')
+    ax.set_title('Average Success Rate by Apprentice (1-10)')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"Appr {i}" for i in all_ids])
+    ax.legend()
+    ax.grid(True, axis='y')
+    ax.set_ylim(0, 1.05)
+    
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(f'{height:.2f}',
+                        xy=(rect.get_x() + rect.get_width() / 2, height),
+                        xytext=(0, 3),  # 3 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=8)
+
+    if td3_vals: autolabel(rects1)
+    if gail_vals: autolabel(rects2)
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved {save_path}")
+    plt.show()
+
+    # Calculate overall average
+    td3_overall = np.mean(td3_vals) if td3_vals else 0
+    gail_overall = np.mean(gail_vals) if gail_vals else 0
+    
+    print(f"\n--- Overall Average Success Rate (Apprentice 1-10) ---")
+    print(f"TD3:  {td3_overall:.2%}")
+    print(f"GAIL: {gail_overall:.2%}")
 
 
 def plot_cross_algorithm_comparison(td3_data_list, gail_data_list, window_size=50, save_path=None, phase_name="Training"):
@@ -307,16 +539,16 @@ def plot_cross_algorithm_comparison(td3_data_list, gail_data_list, window_size=5
         save_path: Base save path (directory inferred from this)
         phase_name: "Training" or "Evaluation" - used in titles and filenames
 
-    Produces 3 figures (one per Apprentice), each with 3 rows:
-      1) Performance (Scores)  : TD3 & GAIL overlaid
-      2) Success Rate          : TD3 & GAIL overlaid
-      3) Binary Success Raster : TD3 & GAIL in one axis
+    Produces figures for each Apprentice 1-10 (UPDATED)
     """
-    # Filter to only Apprentice 1, 2, 3
-    td3_filtered = {d['id']: d for d in td3_data_list if d.get('id', -1) in [1, 2, 3]}
-    gail_filtered = {d['id']: d for d in gail_data_list if d.get('id', -1) in [1, 2, 3]}
+    # Filter to only ID >= 1
+    td3_filtered = {d['id']: d for d in td3_data_list if d.get('id', -1) >= 1}
+    gail_filtered = {d['id']: d for d in gail_data_list if d.get('id', -1) >= 1}
 
-    apprentice_ids = [1, 2, 3]
+    apprentice_ids = sorted(list(set(td3_filtered.keys()) | set(gail_filtered.keys())))
+    # Limit to e.g. 1-10
+    apprentice_ids = [i for i in apprentice_ids if 1 <= i <= 10]
+
     color_td3 = 'tab:blue'
     color_gail = 'tab:orange'
     
@@ -325,14 +557,22 @@ def plot_cross_algorithm_comparison(td3_data_list, gail_data_list, window_size=5
     if save_path:
         from pathlib import Path
         p = Path(save_path)
-        if p.suffix: # If it looks like a file path (has extension)
+        if p.suffix:
             save_dir = p.parent
         else:
             save_dir = p
             
         if not save_dir.exists():
             save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Plot Average Comparison First
+    try:
+        avg_path = save_dir / f"TD3_vs_GAIL_{phase_name}_Average.png" if save_dir else None
+        plot_average_success_comparison(td3_data_list, gail_data_list, save_path=avg_path)
+    except Exception as e:
+        print(f"Error plotting average comparison: {e}")
 
+    # Then Plot Individual Comparison for each apprentice
     for app_id in apprentice_ids:
         td3_data = td3_filtered.get(app_id, {})
         gail_data = gail_filtered.get(app_id, {})

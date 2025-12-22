@@ -4,7 +4,9 @@ import panda_gym
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import imageio
+import imageio
 from IPython import display
+from IPython.display import Video
 from typing import cast
 
 import os
@@ -459,10 +461,29 @@ class TD3Trainer:
                     break
 
         if render_save_path:
-            # env.close()
-            imageio.mimsave(f'{render_save_path}.gif', images, fps=fps, loop=0)
-            with open(f'{render_save_path}.gif', 'rb') as f:
-                display.display(display.Image(data=f.read(), format='gif'))
+            save_path = str(render_save_path)
+            # Check extension, if missing default to .mp4
+            if not (save_path.endswith('.gif') or save_path.endswith('.mp4')):
+                save_path += '.mp4'
+            
+            imageio.mimsave(save_path, images, fps=fps)
+            
+            # If it's a gif, display it. If mp4, maybe just print path?
+            # User request: "display as gif", so if we save as mp4, we can't display as gif easily without converting or just displaying nothing
+            # The previous context "display as gif every time" conflict with "save as video".
+            # I will assume "save as video" takes precedence for storage, but maybe we can't display it easily inline?
+            # Or satisfy both? Save as mp4 AND display/save as gif?
+            # User said: "render as video... save to new directory".
+            # I will prioritize saving the video file properly.
+            print(f"Animation saved to {save_path}")
+            
+            # For compatibility with earlier "display" request, if suffix is gif, display it.
+            if save_path.endswith('.gif'):
+                with open(save_path, 'rb') as f:
+                    display.display(display.Image(data=f.read(), format='gif'))
+            elif save_path.endswith('.mp4'):
+                # Display mp4 video
+                display.display(Video(save_path, embed=True, html_attributes='autoplay loop muted'))
                 
         # Determine if episode was successful (done without truncation)
         ep_success = 1 if done else 0

@@ -18,7 +18,7 @@ from config import (
     FEATURE_CALC_STEPS,
     ALPHA, BETA, GAMMA, TAU, REPLAY_SIZE, NOISE_FACTOR, UPDATE_ACTOR_EVERY,
     EXPERT_MODEL_PATH, GAIL_MODELS_DIR, GAIL_RESULTS_DIR, EXPERT_TRAJECTORIES_PATH,
-    TD3_MODELS_DIR
+    TD3_MODELS_DIR, VIDEO_DIR
 )
 from irl_utils import create_env, get_obs_shape, print_chunked_stats, evaluate_agent
 from plotting import plot_individual_performance, plot_comparative_dashboard
@@ -198,6 +198,11 @@ def evaluate_apprentices(episodes=None):
             'mean_return': results['mean_return'],
             'success_rate': results['success_rate']
         })
+
+        # Visual Verification: Render 1 episode and save as video
+        print(f"Rendering visual verification for GAIL Apprentice {i}...")
+        render_path = VIDEO_DIR / f"GAIL_Apprentice_{i}_Render.mp4"
+        agent.test_model(steps=FEATURE_CALC_STEPS, render_save_path=str(render_path))
     
     return all_eval_results
 
@@ -238,4 +243,11 @@ def plot_all_comparisons(apprentice_train_data, apprentice_eval_data):
             "GAIL Evaluation Phase Comparison",
             None, apprentices_dash,
             save_path=str(GAIL_RESULTS_DIR / "GAIL_Evaluation_Comparison.png")
+        )
+        
+        # Rankings for Evaluation Phase
+        plot_apprentice_comparison(
+            "GAIL_Evaluation",
+            apprentice_eval_data,
+            save_dir=GAIL_RESULTS_DIR
         )

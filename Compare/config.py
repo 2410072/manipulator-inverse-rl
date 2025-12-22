@@ -19,7 +19,7 @@ EXPLORATION_PERIOD_EXPERT = 300  # For Expert training (Matches TD3 notebook)
 PRINT_EVERY = 50
 
 # Number of apprentices (0 to 3 = 4 total)
-NUM_APPRENTICES = 4
+NUM_APPRENTICES = 11
 
 # TD3 Hyperparameters
 ALPHA = 0.001
@@ -64,4 +64,11 @@ EXPERT_MODEL_PATH = MODELS_DIR / "Expert"
 # GAIL-specific paths
 GAIL_MODELS_DIR = MODELS_DIR / "GAIL"
 GAIL_RESULTS_DIR = RESULTS_DIR / "GAIL"
+GAIL_RESULTS_DIR = RESULTS_DIR / "GAIL"
 EXPERT_TRAJECTORIES_PATH = COMPARE_DIR / "expert_trajectories.pt"
+
+# Video directory for rendered animations
+VIDEO_DIR = RESULTS_DIR / "Videos"
+if not VIDEO_DIR.exists():
+    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+
