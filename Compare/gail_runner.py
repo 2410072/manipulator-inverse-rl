@@ -49,13 +49,96 @@ def _ensure_expert_trajectories():
         print(f"Using cached expert trajectories from {EXPERT_TRAJECTORIES_PATH}")
 
 
+def train_single_apprentice(i, expert_loader=None):
+    """
+    Train a single GAIL Apprentice (i).
+    Returns: result dict
+    """
+    env = create_env()
+    obs_shape = get_obs_shape(env)
+    
+    # Create directories
+    GAIL_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    GAIL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Ensure expert trajectories exist
+    _ensure_expert_trajectories()
+
+    if expert_loader is None:
+        # Load expert data
+        expert_loader = build_expert_loader(
+            str(EXPERT_TRAJECTORIES_PATH),
+            batch_size=BATCH_SIZE,
+            device=None,
+            shuffle=True
+        )
+
+    print(f"\n{'='*70}")
+    print(f"  GAIL Apprentice {i} Training")
+    print(f"{'='*70}\n")
+    
+    # Create save path for this apprentice
+    iter_save_path = GAIL_MODELS_DIR / f"Apprentice_{i}"
+    iter_save_path.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize fresh GAIL agent for each run
+    agent = GAILTrainer(
+        env=env,
+        input_dims=obs_shape,
+        agent_name=f'GAIL_Apprentice_{i}',
+        model_save_path=str(iter_save_path) + "/",
+        exploration_period=EXPLORATION_PERIOD,
+        batch_size=BATCH_SIZE,
+        alpha=ALPHA,
+        beta=BETA,
+        gamma=GAMMA,
+        tau=TAU,
+        replay_size=REPLAY_SIZE,
+        noise_factor=NOISE_FACTOR,
+        update_actor_every=UPDATE_ACTOR_EVERY,
+        disc_lr=3e-4,
+        disc_updates=2,
+        gail_reward_scale=1.0,
+        expert_loader=expert_loader,
+    )
+    
+    # Train
+    score_hist, avg_score_hist, success_hist, avg_success_hist = agent.gail_train(
+        n_episodes=N_EPISODES_APPRENTICE,
+        opt_steps=OPT_STEPS,
+        print_every=PRINT_EVERY,
+        plot_save_path=str(GAIL_RESULTS_DIR / f"GAIL_Apprentice_{i}_Performance.png")
+    )
+    
+    # Save model
+    agent.save_model()
+    print(f"GAIL Apprentice {i} saved to {iter_save_path}")
+    
+    # Print chunked stats
+    print_chunked_stats(f"GAIL Apprentice {i}", success_hist)
+    
+    # Plot individual performance
+    plot_individual_performance(
+        f"GAIL Apprentice {i}",
+        score_hist, success_hist,
+        save_path=str(GAIL_RESULTS_DIR / f"GAIL_Apprentice_{i}_Individual.png")
+    )
+    
+    # Store results
+    result = {
+        'id': i,
+        'name': f'GAIL_Apprentice_{i}',
+        'scores': score_hist,
+        'successes': success_hist
+    }
+    return result
+
+
 def train_apprentices():
     """
     Train GAIL Apprentices 0-10.
     Returns all training results.
     """
-    env = create_env()
-    obs_shape = get_obs_shape(env)
     
     # Create directories
     GAIL_MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,7 +147,7 @@ def train_apprentices():
     # Ensure expert trajectories exist
     _ensure_expert_trajectories()
     
-    # Load expert data
+    # Load expert data ONCE for the loop
     expert_loader = build_expert_loader(
         str(EXPERT_TRAJECTORIES_PATH),
         batch_size=BATCH_SIZE,
@@ -76,64 +159,8 @@ def train_apprentices():
     
     # Start from 1 to match TD3 (which uses Apprentice 0 for initial exploration)
     for i in range(1, NUM_APPRENTICES):
-        print(f"\n{'='*70}")
-        print(f"  GAIL Apprentice {i} Training")
-        print(f"{'='*70}\n")
-        
-        # Create save path for this apprentice
-        iter_save_path = GAIL_MODELS_DIR / f"Apprentice_{i}"
-        iter_save_path.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize fresh GAIL agent for each run
-        agent = GAILTrainer(
-            env=env,
-            input_dims=obs_shape,
-            agent_name=f'GAIL_Apprentice_{i}',
-            model_save_path=str(iter_save_path) + "/",
-            exploration_period=EXPLORATION_PERIOD,
-            batch_size=BATCH_SIZE,
-            alpha=ALPHA,
-            beta=BETA,
-            gamma=GAMMA,
-            tau=TAU,
-            replay_size=REPLAY_SIZE,
-            noise_factor=NOISE_FACTOR,
-            update_actor_every=UPDATE_ACTOR_EVERY,
-            disc_lr=3e-4,
-            disc_updates=2,
-            gail_reward_scale=1.0,
-            expert_loader=expert_loader,
-        )
-        
-        # Train
-        score_hist, avg_score_hist, success_hist, avg_success_hist = agent.gail_train(
-            n_episodes=N_EPISODES_APPRENTICE,
-            opt_steps=OPT_STEPS,
-            print_every=PRINT_EVERY,
-            plot_save_path=str(GAIL_RESULTS_DIR / f"GAIL_Apprentice_{i}_Performance.png")
-        )
-        
-        # Save model
-        agent.save_model()
-        print(f"GAIL Apprentice {i} saved to {iter_save_path}")
-        
-        # Print chunked stats
-        print_chunked_stats(f"GAIL Apprentice {i}", success_hist)
-        
-        # Plot individual performance
-        plot_individual_performance(
-            f"GAIL Apprentice {i}",
-            score_hist, success_hist,
-            save_path=str(GAIL_RESULTS_DIR / f"GAIL_Apprentice_{i}_Individual.png")
-        )
-        
-        # Store results
-        all_results.append({
-            'id': i,
-            'name': f'GAIL_Apprentice_{i}',
-            'scores': score_hist,
-            'successes': success_hist
-        })
+        res = train_single_apprentice(i, expert_loader=expert_loader)
+        all_results.append(res)
     
     # Plot apprentice comparison after all training is complete
     from plotting import plot_apprentice_comparison

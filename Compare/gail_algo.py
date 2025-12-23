@@ -94,6 +94,7 @@ class GAILTrainer:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.best_score = 0
         self.agent_name = agent_name
+        print(f"[{self.agent_name}] Initialized on device: {self.device}")
         self.is_trained = False
         self.disc_lr = disc_lr
         if isinstance(expert_loader, str):
@@ -353,6 +354,16 @@ class GAILTrainer:
                 if isinstance(info, dict) and "is_success" in info:
                     ep_success = max(ep_success, float(info["is_success"]))
 
+                # Check for global video recording
+                try:
+                    from video_recorder import global_recorder
+                    # Record at 1 FPS (every 25 steps)
+                    if global_recorder.is_recording and step % 25 == 0:
+                         frame = env.render()
+                         global_recorder.capture_frame(frame)
+                except ImportError:
+                    pass
+
             # HERでリプレイバッファを拡張
             self.her_augmentation(obs_array, actions_array, next_obs_array)
 
@@ -545,6 +556,15 @@ class GAILTrainer:
                 current_achieved_goal = observation['achieved_goal']
                 current_desired_goal = observation['desired_goal']
                 state = np.concatenate((current_observation, current_achieved_goal, current_desired_goal))
+
+                # Check for global video recording
+                try:
+                    from video_recorder import global_recorder
+                    if global_recorder.is_recording:
+                         frame = env.render()
+                         global_recorder.capture_frame(frame)
+                except ImportError:
+                     pass
 
                 if save_states:
                     state_list.append(torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device))

@@ -65,3 +65,10 @@ EXPERT_MODEL_PATH = MODELS_DIR / "Expert"
 GAIL_MODELS_DIR = MODELS_DIR / "GAIL"
 GAIL_RESULTS_DIR = RESULTS_DIR / "GAIL"
 EXPERT_TRAJECTORIES_PATH = COMPARE_DIR / "expert_trajectories.pt"
+
+# Demonstration paths
+DEMONSTRATION_DIR = COMPARE_DIR / "demonstration"
+RENDERING_DIR = DEMONSTRATION_DIR / "rendering"
+OVERVIEW_DIR = DEMONSTRATION_DIR / "overview"    # For full screen recordings
+ROBOT_MOTION_DIR = DEMONSTRATION_DIR / "robot_motion" # For internal robot rendering
+SCREENSHOT_DIR = DEMONSTRATION_DIR / "screenshot" # For screenshots

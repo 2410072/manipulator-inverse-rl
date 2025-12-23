@@ -38,6 +38,7 @@ class TD3Trainer:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.best_score = 0
         self.agent_name = agent_name
+        print(f"[{self.agent_name}] Initialized on device: {self.device}")
         self.is_trained = False
         if model_save_path is None:
             self.model_save_path = f'../Data/{agent_name}'
@@ -294,10 +295,20 @@ class TD3Trainer:
                 else:
                     score += float(reward)
                 
-                # Update success
                 if isinstance(info, dict) and "is_success" in info:
                     ep_success = max(ep_success, float(info["is_success"]))
                 
+                # Check for global video recording
+                try:
+                    from video_recorder import global_recorder
+                    # Record at 1 FPS (every 25 steps, as sim is 25 FPS)
+                    if global_recorder.is_recording and step % 25 == 0:
+                         # Render and capture
+                         frame = env.render()
+                         global_recorder.capture_frame(frame)
+                except ImportError:
+                    pass
+
                 step += 1
 
             # augment replay buffer with HER
@@ -440,6 +451,15 @@ class TD3Trainer:
                 action = self.select_action(state)
 
                 observation, reward, done, truncated, _ = env.step(np.array(action))
+
+                # Check for global video recording
+                try:
+                    from video_recorder import global_recorder
+                    if global_recorder.is_recording:
+                         frame = env.render()
+                         global_recorder.capture_frame(frame)
+                except ImportError:
+                     pass
                 
                 current_observation = observation['observation']
                 current_achieved_goal = observation['achieved_goal']

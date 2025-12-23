@@ -110,6 +110,18 @@ def evaluate_agent(agent, env, episodes=50, steps=200):
     successes = []
     
     for _ in tqdm(range(episodes), desc="Evaluating"):
+        # Check for global video recording
+        try:
+            from video_recorder import global_recorder
+            # We need to capture frames during test_model if recording is on
+            # But test_model is a method of agent.
+            # We can pass a flag or handle it inside test_model.
+            # However, test_model in td3_algo.py handles 'render_save_path' but not our global recorder directly.
+            # Let's modify test_model in td3_algo.py instead to be consistent.
+            pass
+        except ImportError:
+            pass
+
         ep_ret, success = agent.test_model(env=env, steps=steps, render_save_path=None)
         returns.append(ep_ret)
         successes.append(1 if success else 0)

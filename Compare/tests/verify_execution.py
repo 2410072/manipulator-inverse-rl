@@ -45,11 +45,14 @@ class TestExecution(unittest.TestCase):
              patch('td3_runner.EXPLORATION_PERIOD', 1), \
              patch('td3_runner.EXPLORATION_PERIOD_EXPERT', 1), \
              patch('td3_runner.BATCH_SIZE', 64), \
+             patch('td3_runner.BATCH_SIZE', 64), \
              patch('td3_runner.TD3_MODELS_DIR', self.models_dir / "TD3"), \
              patch('td3_runner.TD3_RESULTS_DIR', self.results_dir / "TD3"), \
              patch('td3_runner.EXPERT_MODEL_PATH', self.models_dir / "Expert"), \
              patch('td3_runner.FEATURE_EXPECTATION_EPISODES', 2), \
              patch('td3_runner.FEATURE_EXPECTATION_EPISODES_APPRENTICE', 2), \
+             patch('config.OVERVIEW_DIR', self.results_dir / "demonstration" / "overview"), \
+             patch('config.SCREENSHOT_DIR', self.results_dir / "demonstration" / "screenshot"), \
              patch('td3_runner.NUM_APPRENTICES', 2): # Test just 2 apprentices (0 and 1)
              
             # 1. Train Expert
@@ -61,10 +64,17 @@ class TestExecution(unittest.TestCase):
             print("  Evaluating Expert...")
             td3_runner.evaluate_expert(expert, episodes=2)
             
-            # 3. Train Apprentices
-            print("  Training Apprentices...")
-            td3_runner.train_apprentices(expert=expert, m=2)
+            # 3. Train Apprentices (Granular)
+            print("  Training Apprentices (Granular)...")
+            # 3a. Expert Features
+            expert_feat, _ = td3_runner.compute_expert_features(expert, m=2)
+            
+            # 3b. Apprentice 0
+            res0, w0, margin0, feat0 = td3_runner.train_apprentice_0(m=2)
             self.assertTrue((self.models_dir / "TD3" / "Apprentices" / "Apprentice_0" / "actor.pth").exists())
+            
+            # 3c. Remaining Apprentices
+            td3_runner.train_remaining_apprentices(expert_feat, feat0, w0, margin0, m=2)
             self.assertTrue((self.models_dir / "TD3" / "Apprentices" / "Apprentice_1" / "actor.pth").exists())
 
     def test_gail_pipeline(self):
@@ -127,8 +137,8 @@ class TestExecution(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    test = TestExecution() # Initialize outside try to ensure it exists for finally
     try:
-        test = TestExecution()
         test.setUp()
         test.test_td3_pipeline()
         test.test_gail_pipeline()
@@ -138,4 +148,8 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
     finally:
-        test.tearDown()
+        pass # tearDown is handled if test existed, but we did manual setup calls. 
+        # Actually unittest standard way is unittest.main(), but here we call methods manually.
+        # Let's just call tearDown if test was initialized
+        if 'test' in locals():
+            test.tearDown()
