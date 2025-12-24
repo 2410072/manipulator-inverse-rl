@@ -18,11 +18,11 @@ from config import (
     EXPERT_CHECK_STEPS, FEATURE_CALC_STEPS,
     EXPERT_MODEL_PATH, TD3_MODELS_DIR, TD3_RESULTS_DIR,
     EXPERT_EVAL_EPISODES, FEATURE_EXPECTATION_EPISODES, FEATURE_EXPECTATION_EPISODES_APPRENTICE,
-    ALPHA, BETA, GAMMA, TAU, REPLAY_SIZE, NOISE_FACTOR, UPDATE_ACTOR_EVERY, EPSILON
+    ALPHA, BETA, GAMMA, TAU, REPLAY_SIZE, NOISE_FACTOR, UPDATE_ACTOR_EVERY, EPSILON, SEED
 )
 from irl_utils import (
     create_env, get_obs_shape, compute_average_feature,
-    print_chunked_stats, evaluate_agent
+    print_chunked_stats, evaluate_agent, set_seed
 )
 from irl_algo import solve_projection_method
 from plotting import plot_individual_performance, plot_comparative_dashboard
@@ -36,6 +36,7 @@ def train_expert(n_episodes=None, force_retrain=False):
     Train the TD3 Expert agent.
     Returns training history and evaluation results.
     """
+    set_seed(SEED)
     n_episodes = n_episodes or N_EPISODES_EXPERT
     
     # Create directories
@@ -68,7 +69,8 @@ def train_expert(n_episodes=None, force_retrain=False):
         n_episodes=n_episodes,
         opt_steps=OPT_STEPS,
         print_every=PRINT_EVERY,
-        plot_save_path=str(TD3_RESULTS_DIR / "TD3_Expert_Performance.png")
+        plot_save_path=str(TD3_RESULTS_DIR / "TD3_Expert_Performance.png"),
+        seed=SEED
     )
     
     expert.save_model()
@@ -96,6 +98,7 @@ def train_expert(n_episodes=None, force_retrain=False):
 
 def evaluate_expert(expert=None, episodes=None):
     """Evaluate the TD3 Expert agent."""
+    set_seed(SEED)
     env = create_env()
     obs_shape = get_obs_shape(env)
     
@@ -129,11 +132,177 @@ def evaluate_expert(expert=None, episodes=None):
     return expert, results
 
 
-def train_apprentices(expert=None, m=None):
+def compute_expert_features(expert, env, m=None):
+    """Compute expert feature expectation."""
+    m_expert = m if m is not None else FEATURE_EXPECTATION_EPISODES
+    print(f"Computing Expert feature expectation with {m_expert} episodes...")
+    expert_feature_expectation, expert_mean_reward = compute_average_feature(
+        expert, m=m_expert, steps=FEATURE_CALC_STEPS, env=env
+    )
+    return expert_feature_expectation, expert_mean_reward
+
+
+def train_apprentice_0(env, obs_shape, seed=None):
+    """Train Apprentice 0 with random weights."""
+    current_seed = seed if seed is not None else SEED
+    
+    print(f"\n{'='*70}")
+    print(f"  TD3 Apprentice 0 Training")
+    print(f"{'='*70}\n")
+    
+    # Calculate random weights
+    observation, info = env.reset(seed=current_seed) # Use seed for weight init consistency?
+    # Actually, if we want reproducible weights across runs w/ same seed, we should ensure reset uses seed.
+    # Note: env.reset() returns (obs, info).
+    
+    state = np.concatenate((
+        observation['observation'],
+        observation['achieved_goal'],
+        observation['desired_goal']
+    ))
+    sample_feature = torch.tensor(state, dtype=torch.float32)
+    
+    # Ensure weight generation is reproducible
+    # torch.randn uses torch's seed, which is set by set_seed(current_seed) outside.
+    w_0 = torch.randn(sample_feature.size(0), 1).div_(torch.randn(1).norm())
+    margin = 1.0
+    
+    # Define save path
+    apprentice_base_path = TD3_MODELS_DIR / "Apprentices"
+    apprentice_base_path.mkdir(parents=True, exist_ok=True)
+    iter_save_path = apprentice_base_path / "Apprentice_0"
+    iter_save_path.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize Agent
+    apprentice = TD3Trainer(
+        env=env, input_dims=obs_shape, agent_name='Apprentice_0',
+        model_save_path=str(iter_save_path) + "/",
+        exploration_period=EXPLORATION_PERIOD,
+        batch_size=BATCH_SIZE, replay_size=REPLAY_SIZE,
+        alpha=ALPHA, beta=BETA, gamma=GAMMA, tau=TAU,
+        update_actor_every=UPDATE_ACTOR_EVERY, noise_factor=NOISE_FACTOR
+    )
+    
+    # Train
+    score_hist, avg_score_hist, success_hist, avg_success_hist = apprentice.td3_train(
+        n_episodes=N_EPISODES_APPRENTICE_0,
+        opt_steps=OPT_STEPS,
+        reward_weights=w_0,
+        print_every=PRINT_EVERY,
+        plot_save_path=str(TD3_RESULTS_DIR / "TD3_Apprentice_0_Performance.png"),
+        seed=current_seed
+    )
+    
+    apprentice.save_model()
+    
+    # Compute feature expectation
+    m_apprentice = FEATURE_EXPECTATION_EPISODES_APPRENTICE
+    app_feature, app_reward = compute_average_feature(
+        apprentice, m=m_apprentice, steps=FEATURE_CALC_STEPS
+    )
+    
+    print_chunked_stats("TD3 Apprentice 0", success_hist)
+    
+    plot_individual_performance(
+        "TD3 Apprentice 0",
+        score_hist, success_hist,
+        save_path=str(TD3_RESULTS_DIR / "TD3_Apprentice_0_Individual.png")
+    )
+    
+    result = {
+        'id': 0,
+        'name': 'TD3_Apprentice_0',
+        'scores': score_hist,
+        'successes': success_hist,
+        'margin': margin
+    }
+    
+    return result, app_feature, w_0, margin
+
+
+def train_apprentice_i(i, env, obs_shape, expert_feature_expectation, 
+                       feature_expectation_history, feature_expectation_bar_history, seed=None):
+    """Train Apprentice i (i > 0) using projection method."""
+    if i == 0:
+        raise ValueError("Apprentice 0 should be trained with train_apprentice_0")
+        
+    current_seed = seed if seed is not None else SEED
+    
+    print(f"\n{'='*70}")
+    print(f"  TD3 Apprentice {i} Training")
+    print(f"{'='*70}\n")
+    
+    # Projection method for weights
+    weight, margin, new_bar = solve_projection_method(
+        expert_feature_expectation, feature_expectation_history, feature_expectation_bar_history, i
+    )
+    
+    print(f"Margin[{i}]: {margin:.6f}")
+    
+    if margin <= EPSILON:
+        print(f"converged at iteration {i} with margin {margin}")
+        return None, None, weight, margin, new_bar, True # Converged
+        
+    # Define save path
+    apprentice_base_path = TD3_MODELS_DIR / "Apprentices"
+    apprentice_base_path.mkdir(parents=True, exist_ok=True)
+    iter_save_path = apprentice_base_path / f"Apprentice_{i}"
+    iter_save_path.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize Agent
+    apprentice = TD3Trainer(
+        env=env, input_dims=obs_shape, agent_name=f'Apprentice_{i}',
+        model_save_path=str(iter_save_path) + "/",
+        exploration_period=EXPLORATION_PERIOD,
+        batch_size=BATCH_SIZE, replay_size=REPLAY_SIZE,
+        alpha=ALPHA, beta=BETA, gamma=GAMMA, tau=TAU,
+        update_actor_every=UPDATE_ACTOR_EVERY, noise_factor=NOISE_FACTOR
+    )
+    
+    # Train
+    score_hist, avg_score_hist, success_hist, avg_success_hist = apprentice.td3_train(
+        n_episodes=N_EPISODES_APPRENTICE,
+        opt_steps=OPT_STEPS,
+        reward_weights=weight,
+        print_every=PRINT_EVERY,
+        plot_save_path=str(TD3_RESULTS_DIR / f"TD3_Apprentice_{i}_Performance.png"),
+        seed=current_seed
+    )
+    
+    apprentice.save_model()
+    
+    # Compute feature expectation
+    m_apprentice = FEATURE_EXPECTATION_EPISODES_APPRENTICE
+    app_feature, app_reward = compute_average_feature(
+        apprentice, m=m_apprentice, steps=FEATURE_CALC_STEPS
+    )
+    
+    print_chunked_stats(f"TD3 Apprentice {i}", success_hist)
+    
+    plot_individual_performance(
+        f"TD3 Apprentice {i}",
+        score_hist, success_hist,
+        save_path=str(TD3_RESULTS_DIR / f"TD3_Apprentice_{i}_Individual.png")
+    )
+    
+    result = {
+        'id': i,
+        'name': f'TD3_Apprentice_{i}',
+        'scores': score_hist,
+        'successes': success_hist,
+        'margin': margin
+    }
+    
+    return result, app_feature, weight, margin, new_bar, False # Not Converged
+
+
+def train_apprentices(expert=None, m=None, seed=None):
     """
     Train TD3 Apprentices 0-10 using projection method.
     Returns all training results.
     """
+    current_seed = seed if seed is not None else SEED
+    set_seed(current_seed)
     env = create_env()
     obs_shape = get_obs_shape(env)
     
@@ -145,126 +314,46 @@ def train_apprentices(expert=None, m=None):
             model_load_path=str(expert_path) + "/"
         )
     
-    # Compute expert feature expectation
-    m_expert = m
-    if m_expert is None:
-        m_expert = FEATURE_EXPECTATION_EPISODES
-    print(f"Computing Expert feature expectation with {m_expert} episodes...")
-    expert_feature_expectation, expert_mean_reward = compute_average_feature(
-        expert, m=m_expert, steps=FEATURE_CALC_STEPS, env=env
-    )
+    # 1. Compute Expert Features
+    expert_feature_expectation, _ = compute_expert_features(expert, env, m=m)
     
     # Initialize projection method variables
     feature_expectation = []
     feature_expectation_bar = []
-    weights = []
-    margins = []
+    # weights = [] # Not storing weights list to avoid confusion, simpler to just run logic
+    # margins = []
     all_results = []
     
-    # Create apprentice model directory
-    apprentice_base_path = TD3_MODELS_DIR / "Apprentices"
-    apprentice_base_path.mkdir(parents=True, exist_ok=True)
+    # 2. Train Apprentice 0
+    res0, feat0, w0, m0 = train_apprentice_0(env, obs_shape, seed=current_seed)
+    all_results.append(res0)
+    feature_expectation.append(feat0)
+    # weights.append(w0)
+    # margins.append(m0)
     
-    # Create apprentice model directory
-    apprentice_base_path = TD3_MODELS_DIR / "Apprentices"
-    apprentice_base_path.mkdir(parents=True, exist_ok=True)
+    # 3. Train Apprentice 1...N
+    # We need to manually handle 'bar' updates as in original code logic
+    # The original loop for i > 0 handles solve_projection_method which updates bar internally?
+    # No, solve_projection_method returns new_bar.
     
-    for i in range(NUM_APPRENTICES):
-        print(f"\n{'='*70}")
-        print(f"  TD3 Apprentice {i} Training")
-        print(f"{'='*70}\n")
+    # We need a loop here to replicate the original behavior strictly.
+    for i in range(1, NUM_APPRENTICES):
+        res, feat, w, m, new_bar, converged = train_apprentice_i(
+            i, env, obs_shape, expert_feature_expectation, 
+            feature_expectation, feature_expectation_bar, seed=current_seed
+        )
         
-        # Calculate reward weights using projection method
-        if i == 0:
-            # Initial: Random weights
-            observation, info = env.reset()
-            state = np.concatenate((
-                observation['observation'],
-                observation['achieved_goal'],
-                observation['desired_goal']
-            ))
-            sample_feature = torch.tensor(state, dtype=torch.float32)
-            w_0 = torch.randn(sample_feature.size(0), 1).div_(torch.randn(1).norm())
-            weights.append(w_0)
-            margins.append(1.0)
-        else:
-            # Projection method
-            weight, margin, new_bar = solve_projection_method(
-                expert_feature_expectation, feature_expectation, feature_expectation_bar, i
-            )
+        if new_bar is not None:
+            feature_expectation_bar.append(new_bar)
             
-            if new_bar is not None:
-                feature_expectation_bar.append(new_bar)
+        if converged:
+            break
             
-            weights.append(weight)
-            margins.append(margin)
-            
-            print(f"Margin[{i}]: {margins[i]:.6f}")
-
-            # Check termination condition
-            if margins[i] <= EPSILON:
-                print(f"converged at iteration {i} with margin {margins[i]}")
-                break
-        
-        # Define save path for this apprentice
-        iter_save_path = apprentice_base_path / f"Apprentice_{i}"
-        iter_save_path.mkdir(parents=True, exist_ok=True)
-
-        # Initialize NEW Apprentice agent (Fresh Start)
-        apprentice = TD3Trainer(
-            env=env, input_dims=obs_shape, agent_name=f'Apprentice_{i}',
-            model_save_path=str(iter_save_path) + "/",
-            exploration_period=EXPLORATION_PERIOD,
-            batch_size=BATCH_SIZE, replay_size=REPLAY_SIZE,
-            alpha=ALPHA, beta=BETA, gamma=GAMMA, tau=TAU,
-            update_actor_every=UPDATE_ACTOR_EVERY, noise_factor=NOISE_FACTOR
-        )
-        
-        # Determine number of episodes based on apprentice index
-        n_episodes_current = N_EPISODES_APPRENTICE_0 if i == 0 else N_EPISODES_APPRENTICE
-
-        # Train
-        score_hist, avg_score_hist, success_hist, avg_success_hist = apprentice.td3_train(
-            n_episodes=n_episodes_current,
-            opt_steps=OPT_STEPS,
-            reward_weights=weights[-1],
-            print_every=PRINT_EVERY,
-            plot_save_path=str(TD3_RESULTS_DIR / f"TD3_Apprentice_{i}_Performance.png")
-        )
-        
-        # Save model
-        apprentice.save_model()
-        # Compute feature expectation
-        m_apprentice = m
-        if m_apprentice is None:
-             m_apprentice = FEATURE_EXPECTATION_EPISODES_APPRENTICE
-        app_feature, app_reward = compute_average_feature(
-            apprentice, m=m_apprentice, steps=FEATURE_CALC_STEPS
-        )
-        feature_expectation.append(app_feature)
-        
-        # Print chunked stats
-        print_chunked_stats(f"TD3 Apprentice {i}", success_hist)
-        
-        # Plot individual performance
-        plot_individual_performance(
-            f"TD3 Apprentice {i}",
-            score_hist, success_hist,
-            save_path=str(TD3_RESULTS_DIR / f"TD3_Apprentice_{i}_Individual.png")
-        )
-        
-        # Store results
-        all_results.append({
-            'id': i,
-            'name': f'TD3_Apprentice_{i}',
-            'scores': score_hist,
-            'successes': success_hist,
-            'margin': margins[i]
-        })
+        all_results.append(res)
+        feature_expectation.append(feat)
     
     # Plot apprentice comparison after all training is complete
     from plotting import plot_apprentice_comparison
-    # Plot apprentice comparison after all training is complete
     plot_apprentice_comparison(
         "TD3",
         all_results,
@@ -276,6 +365,7 @@ def train_apprentices(expert=None, m=None):
 
 def evaluate_apprentices():
     """Evaluate all trained TD3 Apprentices."""
+    set_seed(SEED)
     env = create_env()
     obs_shape = get_obs_shape(env)
     

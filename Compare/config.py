@@ -3,16 +3,15 @@
 import sys
 from pathlib import Path
 
-
-
 # Environment
 ENV_NAME = "PandaReach-v3"
 
 # Training parameters
-N_EPISODES_EXPERT = 500
-N_EPISODES_APPRENTICE = 500
-N_EPISODES_APPRENTICE_0 = 100
-OPT_STEPS = 10
+# Main experiment parameters
+N_EPISODES_EXPERT = 500  # default: 500
+N_EPISODES_APPRENTICE = 500  # default: 500
+N_EPISODES_APPRENTICE_0 = 100  # default: 100
+OPT_STEPS = 10  # default: 64
 BATCH_SIZE = 256
 EXPLORATION_PERIOD = 300  # For Apprentices (Matches upstream notebook)
 EXPLORATION_PERIOD_EXPERT = 300  # For Expert training (Matches TD3 notebook)
@@ -65,3 +64,6 @@ EXPERT_MODEL_PATH = MODELS_DIR / "Expert"
 GAIL_MODELS_DIR = MODELS_DIR / "GAIL"
 GAIL_RESULTS_DIR = RESULTS_DIR / "GAIL"
 EXPERT_TRAJECTORIES_PATH = COMPARE_DIR / "expert_trajectories.pt"
+
+# Random Seed
+SEED = 3060856897

@@ -228,7 +228,7 @@ class TD3Trainer:
         
         
     def td3_train(self, n_episodes=1500, opt_steps=64, reward_weights=None, 
-                  print_every=100, render_save_path=None, plot_save_path=None):
+                  print_every=100, render_save_path=None, plot_save_path=None, seed=None):
         
         if render_save_path:
             env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 
@@ -252,7 +252,10 @@ class TD3Trainer:
             actions_array = []
             next_obs_array = []
 
-            observation, info = env.reset()
+            if i == 0 and seed is not None:
+                observation, info = env.reset(seed=seed)
+            else:
+                observation, info = env.reset()
 
             while not (done or truncated):
                 current_observation = observation['observation']

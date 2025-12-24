@@ -20,7 +20,7 @@ except ImportError:
 
 def collect_expert_trajectories(env_name="PandaReach-v3", episodes=100, steps_per_episode=300,
                                 expert_model_path=None, save_path="./expert_trajectories.pt",
-                                render=False):
+                                render=False, seed=None):
     
     if expert_model_path is None:
         expert_model_path = str(EXPERT_MODEL_PATH) + "/"
@@ -52,7 +52,10 @@ def collect_expert_trajectories(env_name="PandaReach-v3", episodes=100, steps_pe
     print(f"Collecting trajectories from {expert_model_path}...")
     
     for i in range(episodes):
-        obs, _ = env.reset()
+        if i == 0 and seed is not None:
+            obs, _ = env.reset(seed=seed)
+        else:
+            obs, _ = env.reset()
         done = False
         truncated = False
         states = []
@@ -76,4 +79,11 @@ def collect_expert_trajectories(env_name="PandaReach-v3", episodes=100, steps_pe
 
 
 if __name__ == "__main__":
-    collect_expert_trajectories()
+    try:
+        from config import SEED
+    except ImportError:
+         seed = 42 # Fallback
+         SEED = 42
+    
+    # Also set global seed if possible? No, the function takes seed.
+    collect_expert_trajectories(seed=SEED)
