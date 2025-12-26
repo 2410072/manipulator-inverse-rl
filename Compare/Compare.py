@@ -93,8 +93,13 @@ def run_experiment(seed):
     print("\n--- Checking TD3 Success Rates ---")
     if not check_single_algo_success(td3_results, "TD3"):
         print("TD3 failed criteria. Skipping GAIL and retrying with new seed...")
-        return td3_results, None # Return None for GAIL to signal skip
+        return td3_results, None, None, None, None # Return None to signal skip
     
+    # Evaluate TD3 Apprentices
+    print("\n--- Evaluating TD3 Apprentices ---")
+    td3_apprentice_eval_data = td3_runner.evaluate_apprentices()
+    
+    # --- Phase 3: GAIL Training ---
     # Train GAIL Apprentices
     print("\n--- Training GAIL Apprentices ---")
     
@@ -111,10 +116,25 @@ def run_experiment(seed):
         all_gail_results.append(res)
         
     gail_results = all_gail_results
+
+    # Check GAIL Success
+    print("\n--- Checking GAIL Success Rates ---")
+    if not check_single_algo_success(gail_results, "GAIL"):
+        print("GAIL failed criteria. Retrying with new seed...")
+        return td3_results, gail_results, td3_apprentice_eval_data, None, None
+
+    # Evaluate GAIL Apprentices
+    print("\n--- Evaluating GAIL Apprentices ---")
+    gail_apprentice_eval_data = gail_runner.evaluate_apprentices()
+
+    # Evaluate Expert (now that we know we are successful)
+    print("\n--- Evaluating TD3 Expert ---")
+    _, td3_expert_eval_data = td3_runner.evaluate_expert(expert)
     
-    return td3_results, gail_results
+    return td3_results, gail_results, td3_expert_eval_data, td3_apprentice_eval_data, gail_apprentice_eval_data
 
 def check_single_algo_success(results, algo_name):
+
     """
     Check if at least one Apprentice (1-3) achieves >= 90% success rate 
     (45/50) in any 50-episode chunk between episodes 400 and 500.
@@ -138,7 +158,7 @@ def check_single_algo_success(results, algo_name):
             if len(successes) >= end_ep:
                 chunk_data = successes[start_ep:end_ep]
                 count = sum(chunk_data)
-                print(f"DEBUG: Checking chunk {chunk_idx} (ep {start_ep}-{end_ep-1}): {count}/50") # DEBUG PRINT
+                # print(f"DEBUG: Checking chunk {chunk_idx} (ep {start_ep}-{end_ep-1}): {count}/50") # DEBUG PRINT
                 current_max = max(current_max, count)
                 if count >= THRESH_COUNT:
                     passed = True
@@ -227,11 +247,14 @@ def main():
                 print(f"Error deleting expert trajectories: {e}")
         
         try:
-            td3_res, gail_res = run_experiment(seed)
+            td3_res, gail_res, expert_eval, td3_eval, gail_eval = run_experiment(seed)
             
             if check_success_rates(td3_res, gail_res, threshold=THRESHOLD):
                 print(f"\n\nSUCCESS! Found good seed: {seed}")
                 update_config_seed(seed)
+                
+                # Generate plots
+                generate_comparison_plots(expert_eval, td3_eval, gail_eval)
                 break
             else:
                 print(f"\nSeed {seed} failed criteria. Retrying...")
@@ -243,6 +266,39 @@ def main():
             import traceback
             traceback.print_exc()
             print("Retrying with new seed...")
+
+# Compare TD3 and GAIL Apprentices
+from config import TD3_RESULTS_DIR, RESULTS_DIR
+import compare_utils
+
+# Combine evaluation data
+def compare_expert_apprentices(td3_expert_eval_data, td3_apprentice_eval_data, gail_apprentice_eval_data):
+    expert_data, all_apprentices = compare_utils.prepare_final_comparison_data(
+        td3_expert_eval_data,
+        td3_apprentice_eval_data,
+        gail_apprentice_eval_data
+    )
+    return expert_data, all_apprentices
+
+def generate_comparison_plots(td3_expert_eval_data, td3_apprentice_eval_data, gail_apprentice_eval_data):
+    print("\n--- Generating Comparative Plots ---")
+    
+    # Import locally to avoid issues if imports change
+    from plotting import plot_comparative_dashboard
+    
+    expert_data, all_apprentices = compare_expert_apprentices(td3_expert_eval_data, td3_apprentice_eval_data, gail_apprentice_eval_data)
+    
+    # Save path
+    save_path = TD3_RESULTS_DIR.parent / "TD3_vs_GAIL_Comparison.png"
+    
+    plot_comparative_dashboard(
+        "TD3 vs GAIL Evaluation Comparison",
+        expert_data,
+        all_apprentices,
+        save_path=str(save_path)
+    )
+    print(f"Plot saved to {save_path}")
+
 
 if __name__ == "__main__":
     main()

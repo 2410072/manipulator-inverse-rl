@@ -203,6 +203,13 @@ def evaluate_apprentices(episodes=None):
         
         print_chunked_stats(f"GAIL Apprentice {i} (Eval)", results['successes'])
         
+        # Plot individual evaluation performance
+        plot_individual_performance(
+            f"GAIL Apprentice {i} (Eval)",
+            results['returns'], results['successes'],
+            save_path=str(GAIL_RESULTS_DIR / f"GAIL_Apprentice_{i}_Evaluation.png")
+        )
+        
         all_eval_results.append({
             'id': i,
             'name': f'GAIL_Apprentice_{i}',
@@ -212,6 +219,7 @@ def evaluate_apprentices(episodes=None):
             'success_rate': results['success_rate']
         })
     
+    env.close()
     return all_eval_results
 
 
