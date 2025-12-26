@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+from typing import Dict, Any
 from pathlib import Path
 import sys
 import os
@@ -86,7 +87,8 @@ def train_expert(n_episodes=None, force_retrain=False):
         save_path=str(TD3_RESULTS_DIR / "TD3_Expert_Individual.png")
     )
     
-    training_data = {
+    training_data: Dict[str, Any] = {
+        'name': 'TD3 Expert',
         'scores': score_history,
         'successes': success_history,
         'avg_scores': avg_score_history,
@@ -145,6 +147,7 @@ def compute_expert_features(expert, env, m=None):
 def train_apprentice_0(env, obs_shape, seed=None):
     """Train Apprentice 0 with random weights."""
     current_seed = seed if seed is not None else SEED
+    set_seed(current_seed)
     
     print(f"\n{'='*70}")
     print(f"  TD3 Apprentice 0 Training")
@@ -227,6 +230,7 @@ def train_apprentice_i(i, env, obs_shape, expert_feature_expectation,
         raise ValueError("Apprentice 0 should be trained with train_apprentice_0")
         
     current_seed = seed if seed is not None else SEED
+    set_seed(current_seed)
     
     print(f"\n{'='*70}")
     print(f"  TD3 Apprentice {i} Training")
@@ -394,6 +398,13 @@ def evaluate_apprentices():
         
         print_chunked_stats(f"TD3 Apprentice {i} (Eval)", results['successes'])
         
+        # Plot individual evaluation performance
+        plot_individual_performance(
+            f"TD3 Apprentice {i} (Eval)",
+            results['returns'], results['successes'],
+            save_path=str(TD3_RESULTS_DIR / f"TD3_Apprentice_{i}_Evaluation.png")
+        )
+        
         all_eval_results.append({
             'id': i,
             'name': f'TD3_Apprentice_{i}',
@@ -403,6 +414,7 @@ def evaluate_apprentices():
             'success_rate': results['success_rate']
         })
     
+    env.close()
     return all_eval_results
 
 
