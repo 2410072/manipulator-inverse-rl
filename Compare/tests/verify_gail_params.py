@@ -28,7 +28,9 @@ def test_gail_parameters():
         with patch('gail_runner.create_env') as mock_env, \
              patch('gail_runner.get_obs_shape') as mock_obs, \
              patch('gail_runner.build_expert_loader') as mock_loader, \
-             patch('gail_runner._ensure_expert_trajectories'):
+             patch('gail_runner.ensure_expert_trajectories'), \
+             patch('gail_runner.plot_individual_performance'), \
+             patch('plotting.plot_apprentice_comparison'):
              
              # Run the function
              train_apprentices()

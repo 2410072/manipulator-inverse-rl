@@ -13,7 +13,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 import sys
-sys.path.append('../utils/')
+utils_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+if utils_dir not in sys.path:
+    sys.path.append(utils_dir)
 from networks import Actor, Critic
 from replay import ExperienceReplayMemory
 
@@ -207,7 +209,7 @@ class TD3Trainer:
         
         
     def td3_train(self, n_episodes=1500, opt_steps=64, reward_weights=None, 
-                  print_every=100, render_save_path=None, plot_save_path=None):
+                  print_every=100, render_save_path=None, plot_save_path=None, seed=None):
         
         if render_save_path:
             env = gym.wrappers.RecordVideo(self.env, video_folder=render_save_path, 

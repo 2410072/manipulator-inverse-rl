@@ -13,7 +13,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 import sys
-sys.path.append('../utils/')
+utils_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+if utils_dir not in sys.path:
+    sys.path.append(utils_dir)
 from networks import Actor, Critic
 from replay import ExperienceReplayMemory
 

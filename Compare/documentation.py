@@ -1,4 +1,12 @@
 # documentation.py - Dynamic documentation functions for Compare.ipynb
+import os
+import sys
+
+# Ensure current directory is in sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 from IPython.display import display, Markdown
 import config
 def display_td3_intro():

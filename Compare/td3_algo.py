@@ -8,6 +8,13 @@ from IPython import display
 from typing import cast
 
 import os
+import sys
+
+# Ensure current directory is in sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

@@ -1,0 +1,17 @@
+# Core RL and Simulation
+gymnasium
+panda-gym
+pybullet
+
+# Deep Learning
+torch
+
+# Visualization and Utilities
+matplotlib
+japanize-matplotlib
+imageio
+tqdm
+
+# Jupyter Notebook support
+ipykernel
+IPython

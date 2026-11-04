@@ -66,7 +66,9 @@ def build_expert_loader(expert_path, batch_size=256, device=None, shuffle=True):
     return ExpertLoader(trajectories, batch_size=batch_size, device=device, shuffle=shuffle)
 
 import sys
-sys.path.append('../utils/')
+utils_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+if utils_dir not in sys.path:
+    sys.path.append(utils_dir)
 from networks import Actor, Critic, Discriminator
 from replay import ExperienceReplayMemory
 

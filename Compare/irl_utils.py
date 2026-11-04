@@ -6,8 +6,15 @@ import panda_gym
 import torch
 from tqdm import tqdm
 
-import random
 import os
+import sys
+
+# Ensure current directory is in sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+import random
 from config import ENV_NAME, SEED
 
 
@@ -34,10 +41,11 @@ def create_env():
     except ImportError:
         pass
 
+    renderer = "OpenGL" if os.environ.get("DISPLAY") else "Tiny"
     env = gym.make(
         ENV_NAME,
         render_mode="rgb_array",
-        renderer="OpenGL",
+        renderer=renderer,
         render_target_position=[0, 0.15, 0.25],
         render_distance=0.85,
         render_yaw=135,
